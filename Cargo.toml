@@ -1,0 +1,21 @@
+[package]
+name = "monk"
+version = "0.1.0"
+authors = ["Sergey Golovin <sergey.golovin@protonmail.com>"]
+edition = "2021"
+license = "MIT"
+description = ""
+readme = "README.md"
+homepage = "https://github.com/daynin/monk"
+repository = "https://github.com/daynin/monk"
+keywords = ["cli", "git", "git hooks"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+clap = { version = "4.5.17", features = ["derive"] }
+serde = { version = "1.0.210", features = ["derive"] }
+serde_yaml = "0.9.34"
+
+[dev-dependencies]
+clippy = "0.0.302"
+rustfmt = "0.10.0"
