@@ -8,7 +8,7 @@ description = "Monk is a simple Git hooks manager written in Rust. It allows you
 readme = "README.md"
 homepage = "https://github.com/daynin/monk"
 repository = "https://github.com/daynin/monk"
-keywords = ["cli", "git", "git hooks"]
+keywords = ["cli", "git", "git-hooks"]
 categories = ["command-line-utilities"]
 
 [dependencies]
