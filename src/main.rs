@@ -69,7 +69,7 @@ fn install_hook(hook_name: &str) {
     }
     let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
     let hook_content = format!(
-        "#!/bin/sh\nexec githooks-manager run {} \"$@\"\n",
+        "#!/bin/sh\nexec monk run {} \"$@\"\n",
         hook_name
     );
     fs::write(&hook_path, hook_content)
