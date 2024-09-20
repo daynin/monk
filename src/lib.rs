@@ -55,7 +55,19 @@ pub fn install_hook(hook_name: &str) {
         fs::create_dir_all(git_hooks_dir).expect("Failed to create .git/hooks directory");
     }
     let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
-    let hook_content = format!("#!/bin/sh\nexec monk run {}\n", hook_name);
+    let hook_content = format!(
+        "
+#!/bin/sh\n
+if monk -h >/dev/null 2>&1
+then
+  exec monk run {}
+else
+  cargo install monk
+  exec monk run pre-push
+fi
+        ",
+        hook_name
+    );
     fs::write(&hook_path, hook_content)
         .unwrap_or_else(|_| panic!("Failed to write hook script to {}", hook_path));
 
