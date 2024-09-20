@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://github.com/daynin/fundoc">
+  <a href="https://github.com/daynin/monk">
     <img src="./logo.png" height="200px"/>
   </a>
 </p>
@@ -9,8 +9,8 @@
 </h2>
 
 <p align="center">
-  <a href="https://travis-ci.org/daynin/fundoc">
-  <a href="https://github.com/daynin/fundoc/blob/master/LICENSE">
+  <a href="https://travis-ci.org/daynin/monk">
+  <a href="https://github.com/daynin/monk/blob/master/LICENSE">
     <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg">
   </a>
   <a href="https://github.com/daynin/monk/issues">
