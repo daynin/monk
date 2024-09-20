@@ -56,16 +56,14 @@ pub fn install_hook(hook_name: &str) {
     }
     let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
     let hook_content = format!(
-        "
-#!/bin/sh\n
+        "#!/bin/sh\n
 if monk -h >/dev/null 2>&1
 then
   exec monk run {}
 else
   cargo install monk
   exec monk run pre-push
-fi
-        ",
+fi",
         hook_name
     );
     fs::write(&hook_path, hook_content)
