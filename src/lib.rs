@@ -44,7 +44,7 @@ pub fn read_config() -> Config {
 }
 
 pub fn install_hooks(config: &Config) {
-    for (hook_name, _) in &config.hooks {
+    for hook_name in config.hooks.keys() {
         install_hook(hook_name);
     }
 }

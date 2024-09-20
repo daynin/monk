@@ -7,6 +7,7 @@ pkgs.mkShell {
     pkgs.just
   ];
   shellHook = ''
+    export PATH=$PATH:~/.cargo/bin
     echo "Start developing..."
   '';
 } 
