@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/daynin/monk">
-    <img src="./logo.png" height="200px"/>
+    <img src="./logo.svg" height="200px"/>
   </a>
 </p>
 
