@@ -59,12 +59,11 @@ pub fn install_hook(hook_name: &str) {
         "#!/bin/sh\n
 if monk -h >/dev/null 2>&1
 then
-  exec monk run {}
+  exec monk run {hook_name}
 else
   cargo install monk
-  exec monk run pre-push
-fi",
-        hook_name
+  exec monk run {hook_name}
+fi"
     );
     fs::write(&hook_path, hook_content)
         .unwrap_or_else(|_| panic!("Failed to write hook script to {}", hook_path));
