@@ -1,9 +1,89 @@
-# Monk
+<p align="center">
+  <a href="https://github.com/daynin/fundoc">
+    <img src="./logo.png" height="200px"/>
+  </a>
+</p>
 
-Monk is a simple Git hooks manager written in Rust. It allows you to manage and automate Git hooks easily using a YAML configuration file.
+<h2 align="center">
+    Monk is a simple Git hooks manager
+</h2>
 
-## Features
+<p align="center">
+  <a href="https://travis-ci.org/daynin/fundoc">
+  <a href="https://github.com/daynin/fundoc/blob/master/LICENSE">
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg">
+  </a>
+  <a href="https://github.com/daynin/monk/issues">
+    <img alt="GitHub Issues" src="https://img.shields.io/github/issues/daynin/monk.svg">
+  </a>
+  <a href="https://crates.io/crates/monk">
+    <img alt="Crates.io" src="https://img.shields.io/crates/v/monk.svg">
+  </a>
+</p>
 
-- Automatically installs Git hooks from a configuration file.
-- Executes multiple commands for each Git hook.
-- Written in Rust, providing fast and reliable performance.
+### Monk's features:
+
+- 🦀 **Easily set up in your Rust project.** No need to install additional package managers.
+- ⚙️ **Works with custom `build.rs` files.** Automate the hooks installation process.
+- 💻 **Run your hooks via CLI.** Test your hooks without triggering them via Git.
+
+> Keep calm, monk will protect your repo!
+
+### Installation
+
+You can install it using `cargo`:
+
+```sh
+cargo install monk
+```
+
+
+### Usage
+
+Create a configuration file `monk.yaml` in your project:
+
+```yaml
+pre-commit:
+  commands:
+    - cargo fmt -- --check
+    - cargo clippy -- -D warnings
+
+pre-push:
+  commands:
+    - cargo test
+
+```
+
+
+Then, install the hooks manually:
+
+```sh
+monk install
+```
+
+#### Or 
+
+Install `monk` as a build dependency **(this is the preferred way)**:
+
+```sh
+cargo add --build monk
+```
+
+and create a build script `build.rs`:
+
+```rust
+pub fn main() {
+    monk::init();
+}
+```
+
+This way, `monk` will **automatically install hooks** for every team member during the build process.
+
+#### Running hooks hooks manually
+If you want to run specific hooks, use the `run` command:
+
+```sh
+monk run pre-commit
+```
+
+
