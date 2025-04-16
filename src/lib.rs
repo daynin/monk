@@ -126,3 +126,9 @@ pub fn run_hook(config: &Config, hook_name: &str) {
         std::process::exit(1);
     }
 }
+
+pub fn init() {
+    let config = read_config();
+
+    install_hooks(&config);
+}

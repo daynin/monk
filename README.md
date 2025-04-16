@@ -37,6 +37,25 @@ You can install it using `cargo`:
 cargo install monk
 ```
 
+#### Or
+
+You can just add it as a build dependency:
+
+```
+cargo add --build monk
+```
+
+And create `build.rs` file:
+
+```rust
+pub fn main() {
+    monk::init();
+}
+```
+
+In this case monk will be automatically installed and will init all hooks from `monk.yaml`. 
+
+This way is the most convenient way for rust projects since it doesn't require installing monk manually from all contributors.
 
 ### Usage
 
