@@ -39,13 +39,13 @@ cargo install monk
 
 #### Or
 
-You can just add it as a build dependency:
+You can add it as a build dependency:
 
-```
+```sh
 cargo add --build monk
 ```
 
-And create `build.rs` file:
+Then create a `build.rs` file:
 
 ```rust
 pub fn main() {
@@ -53,13 +53,22 @@ pub fn main() {
 }
 ```
 
-In this case monk will be automatically installed and will init all hooks from `monk.yaml`. 
+In this case, `monk` will be installed automatically and will initialize all hooks from `monk.yaml`
+.
+This is the most convenient option for Rust projects, as it doesn't require contributors to install `monk` manually.
 
-This way is the most convenient way for rust projects since it doesn't require installing monk manually from all contributors.
+#### Installing monk with Nix
+
+You can also install `monk` using Nix:
+
+```sh
+nix profile install github:daynin/monk
+```
+
 
 ### Usage
 
-Create a configuration file `monk.yaml` in your project:
+Create a configuration file named `monk.yaml` in your project root:
 
 ```yaml
 pre-commit:
@@ -74,35 +83,28 @@ pre-push:
 ```
 
 
-Then, install the hooks manually:
+If you installed `monk` manually, run:
 
 ```sh
 monk install
 ```
 
-#### Or 
-
-Install `monk` as a build dependency **(this is the preferred way)**:
-
-```sh
-cargo add --build monk
-```
-
-and create a build script `build.rs`:
-
-```rust
-pub fn main() {
-    monk::init();
-}
-```
-
-This way, `monk` will **automatically install hooks** for every team member during the build process.
+If you added it as a build dependency and set up `build.rs` as shown above, the hooks will be installed automatically when you build your project.
 
 #### Running hooks hooks manually
-If you want to run specific hooks, use the `run` command:
+
+To run specific hooks manually, use the `run` command
 
 ```sh
 monk run pre-commit
 ```
 
+#### Removing Hooks
 
+`monk` automatically creates backup files for existing hooks and restores them when you remove monk's hooks.
+
+To remove the hooks, run:
+
+```sh  
+monk uninstall
+```
