@@ -1,5 +1,5 @@
 use clap::Parser;
-use monk::{install_hooks, read_config, run_hook, Cli, Commands};
+use monk::{install_hooks, read_config, run_hook, uninstall_hooks, Cli, Commands};
 use std::path::Path;
 
 pub fn main() {
@@ -18,5 +18,6 @@ pub fn main() {
         Commands::Run { hook_name } => {
             run_hook(&config, &hook_name);
         }
+        Commands::Uninstall => uninstall_hooks(&config),
     }
 }

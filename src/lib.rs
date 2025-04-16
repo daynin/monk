@@ -13,8 +13,12 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    #[command(about = "Install all hooks listed in monk.yaml")]
     Install,
+    #[command(about = "Run specified hook")]
     Run { hook_name: String },
+    #[command(about = "Uninstall all monk hooks and restore backups if available")]
+    Uninstall,
 }
 
 #[derive(Deserialize)]
@@ -28,23 +32,27 @@ pub struct Hook {
     commands: Vec<String>,
 }
 
-pub fn init() {
-    if !Path::new(".git").exists() {
-        eprintln!("Error: .git directory not found. Ensure you're in a Git repository.");
-        std::process::exit(1);
-    }
-
-    let config = read_config();
-    install_hooks(&config);
-}
-
 pub fn read_config() -> Config {
     let config_str = fs::read_to_string("monk.yaml").expect("Failed to read monk.yaml");
     serde_yaml::from_str(&config_str).expect("Failed to parse monk.yaml")
 }
 
 pub fn install_hooks(config: &Config) {
+    let git_hooks_dir = ".git/hooks";
+    if !Path::new(git_hooks_dir).exists() {
+        fs::create_dir_all(git_hooks_dir).expect("Failed to create .git/hooks directory");
+    }
+
     for hook_name in config.hooks.keys() {
+        let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
+        let backup_path = format!("{}.backup", hook_path);
+
+        if Path::new(&hook_path).exists() && !Path::new(&backup_path).exists() {
+            fs::rename(&hook_path, &backup_path)
+                .unwrap_or_else(|_| panic!("Failed to backup existing hook: {}", hook_name));
+            println!("Backed up existing hook: {}", hook_name);
+        }
+
         install_hook(hook_name);
     }
 }
@@ -54,6 +62,7 @@ pub fn install_hook(hook_name: &str) {
     if !Path::new(git_hooks_dir).exists() {
         fs::create_dir_all(git_hooks_dir).expect("Failed to create .git/hooks directory");
     }
+
     let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
     let hook_content = format!(
         "#!/bin/sh\n
@@ -76,6 +85,26 @@ fi"
             .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&hook_path, perms).expect("Failed to set file permissions");
+    }
+}
+
+pub fn uninstall_hooks(config: &Config) {
+    let git_hooks_dir = ".git/hooks";
+    for hook_name in config.hooks.keys() {
+        let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
+        let backup_path = format!("{}.backup", hook_path);
+
+        if Path::new(&backup_path).exists() {
+            fs::rename(&backup_path, &hook_path)
+                .unwrap_or_else(|_| panic!("Failed to restore backup for {}", hook_name));
+            println!("Restored backup for {}", hook_name);
+        } else if Path::new(&hook_path).exists() {
+            fs::remove_file(&hook_path)
+                .unwrap_or_else(|_| panic!("Failed to remove hook: {}", hook_name));
+            println!("Removed hook {}", hook_name);
+        } else {
+            println!("No hook or backup found for {}", hook_name);
+        }
     }
 }
 
