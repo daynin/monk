@@ -91,7 +91,7 @@ monk install
 
 If you added it as a build dependency and set up `build.rs` as shown above, the hooks will be installed automatically when you build your project.
 
-#### Running hooks hooks manually
+#### Running hooks manually
 
 To run specific hooks manually, use the `run` command
 
