@@ -10,7 +10,7 @@ If you discover a security vulnerability in this project, please report it **pri
 
 To report a vulnerability:
 
-- **Email**: [YOUR EMAIL HERE]
+- **Email**: sergey.golovin@protonmail.com
 - **Please do not** open public GitHub issues or pull requests describing the vulnerability.
 - Include as much relevant information as possible:
   - Affected version(s)
