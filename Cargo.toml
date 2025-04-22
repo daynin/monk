@@ -12,13 +12,9 @@ keywords = ["cli", "git", "git-hooks"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-clap = { version = "4.5.17", features = ["derive"] }
-serde = { version = "1.0.210", features = ["derive"] }
+clap = { version = "4.5.37", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
-
-[dev-dependencies]
-clippy = "0.0.302"
-rustfmt = "0.10.0"
 
 [lib]
 name = "monk"
