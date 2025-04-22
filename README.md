@@ -19,6 +19,9 @@
   <a href="https://crates.io/crates/monk">
     <img alt="Crates.io" src="https://img.shields.io/crates/v/monk.svg">
   </a>
+  <a href="https://crates.io/crates/monk">
+    <img alt="Downloads" src="https://img.shields.io/crates/d/monk">
+  </a>
 </p>
 
 ### Monk's features:
