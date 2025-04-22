@@ -9,7 +9,9 @@
 </h2>
 
 <p align="center">
-  <a href="https://travis-ci.org/daynin/monk">
+  <a href="https://www.bestpractices.dev/en/projects/10442">
+    <img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/6505/badge">
+  </a>
   <a href="https://github.com/daynin/monk/blob/master/LICENSE">
     <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg">
   </a>
