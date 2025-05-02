@@ -12,12 +12,8 @@ pub fn main() {
     let config = read_config();
 
     match cli.command {
-        Commands::Install => {
-            install_hooks(&config);
-        }
-        Commands::Run { hook_name } => {
-            run_hook(&config, &hook_name);
-        }
+        Commands::Install => install_hooks(&config),
+        Commands::Run { hook_name } => run_hook(&config, &hook_name),
         Commands::Uninstall => uninstall_hooks(&config),
     }
 }
