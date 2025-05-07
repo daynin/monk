@@ -65,7 +65,6 @@ pub fn install_hook(hook_name: &str) {
 
     let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
 
-    #[cfg(unix)]
     let hook_content = format!(
         "#!/bin/sh\n\
         if monk -h >/dev/null 2>&1\n\
@@ -75,18 +74,6 @@ pub fn install_hook(hook_name: &str) {
             cargo install monk\n\
             exec monk run {hook_name}\n\
         fi"
-    );
-
-    #[cfg(windows)]
-    let hook_content = format!(
-        "@echo off\r\n\
-        monk -h >nul 2>&1\r\n\
-        if %errorlevel% == 0 (\r\n\
-            monk run {hook_name}\r\n\
-        ) else (\r\n\
-            cargo install monk\r\n\
-            monk run {hook_name}\r\n\
-        )"
     );
 
     fs::write(&hook_path, hook_content)
