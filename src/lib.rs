@@ -63,11 +63,7 @@ pub fn install_hook(hook_name: &str) {
         fs::create_dir_all(git_hooks_dir).expect("Failed to create .git/hooks directory");
     }
 
-    #[cfg(unix)]
     let hook_path = format!("{}/{}", git_hooks_dir, hook_name);
-
-    #[cfg(windows)]
-    let hook_path = format!("{}/{}.ps1", git_hooks_dir, hook_name);
 
     #[cfg(unix)]
     let hook_content = format!(
