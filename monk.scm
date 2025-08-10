@@ -29,7 +29,7 @@
         (base32
          ;; Note: This hash needs to be updated when the main branch changes
          ;; To get the correct hash: guix hash -rx <path-to-cloned-repo>
-         "0s5j5hf27vzrr095xg678qh7j7lghzv5z0f77wvlxjszcvys4ch5"))))
+         "0x3rh0g8rhx2d85nfnyhjsr7lh5cgjmw7d600r9k4988ppdswn2k"))))
     (build-system cargo-build-system)
     (arguments
      `(#:phases
