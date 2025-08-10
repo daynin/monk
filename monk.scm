@@ -3,16 +3,31 @@
 ;;;
 ;;; To install directly from GitHub:
 ;;; guix package -f https://raw.githubusercontent.com/daynin/monk/main/monk.scm
-;;;
-;;; Or locally:
-;;; guix package -f monk.scm
 
 (use-modules (guix packages)
              (guix download)
              (guix git-download)
              (guix build-system cargo)
              (guix licenses)
-             (gnu packages pkg-config))
+             (gnu packages pkg-config)
+             (ice-9 popen)
+             (ice-9 rdelim)
+             (ice-9 regex))
+
+;; Dynamically compute the hash for the main branch
+(define (get-monk-hash)
+  (let* ((port-mktemp (open-pipe* OPEN_READ "mktemp" "-d" "/tmp/monk-XXXXXX"))
+         (tmpdir (read-line port-mktemp))
+         (_ (close-pipe port-mktemp))
+         (_ (system* "git" "clone" "--depth" "1" 
+                     "https://github.com/daynin/monk.git" tmpdir))
+         (port (open-pipe* OPEN_READ "guix" "hash" "-rx" tmpdir))
+         (hash (read-line port)))
+    (close-pipe port)
+    (system* "rm" "-rf" tmpdir)
+    (if (eof-object? hash)
+        "0000000000000000000000000000000000000000000000000000"
+        hash)))
 
 (define-public monk
   (package
@@ -26,10 +41,7 @@
              (commit "main")))
        (file-name (git-file-name name version))
        (sha256
-        (base32
-         ;; Note: This hash needs to be updated when the main branch changes
-         ;; To get the correct hash: guix hash -rx <path-to-cloned-repo>
-         "0x3rh0g8rhx2d85nfnyhjsr7lh5cgjmw7d600r9k4988ppdswn2k"))))
+        (base32 (get-monk-hash)))))
     (build-system cargo-build-system)
     (arguments
      `(#:phases

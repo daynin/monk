@@ -75,8 +75,11 @@ nix profile install github:daynin/monk
 You can install `monk` using GNU Guix directly from GitHub:
 
 ```sh
+# Install latest version from main branch
 guix package -f <(curl -s https://raw.githubusercontent.com/daynin/monk/main/monk.scm)
 ```
+
+Note: This will automatically fetch and build the latest version from the main branch.
 
 
 ### Usage
