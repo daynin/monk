@@ -1,8 +1,8 @@
 ;;; GNU Guix package definition for Monk
 ;;; A simple Git hooks manager written in Rust
 ;;;
-;;; To install directly from GitHub:
-;;; guix package -f https://raw.githubusercontent.com/daynin/monk/main/monk.scm
+;;; To install:
+;;; guix package -f monk.scm
 
 (use-modules (guix packages)
              (guix download)
@@ -11,23 +11,8 @@
              (guix licenses)
              (gnu packages pkg-config)
              (gnu packages crates-io)
-             (ice-9 popen)
-             (ice-9 rdelim))
-
-;; Dynamically compute the hash for the main branch
-(define (get-monk-hash)
-  (let* ((port-mktemp (open-pipe* OPEN_READ "mktemp" "-d" "/tmp/monk-XXXXXX"))
-         (tmpdir (read-line port-mktemp))
-         (_ (close-pipe port-mktemp))
-         (_ (system* "git" "clone" "--depth" "1" 
-                     "https://github.com/daynin/monk.git" tmpdir))
-         (port (open-pipe* OPEN_READ "guix" "hash" "-rx" tmpdir))
-         (hash (read-line port)))
-    (close-pipe port)
-    (system* "rm" "-rf" tmpdir)
-    (if (eof-object? hash)
-        "0000000000000000000000000000000000000000000000000000"
-        hash)))
+             (gnu packages crates-apple)
+             (gnu packages crates-windows))
 
 (define-public monk
   (package
@@ -41,12 +26,30 @@
              (commit "main")))
        (file-name (git-file-name name version))
        (sha256
-        (base32 (get-monk-hash)))))
+        (base32 "0s29q107haf0kmrl05zqqncgmmkj77hflhcyb6s6w19f0vfsmfii"))))
     (build-system cargo-build-system)
     (arguments 
      `(#:install-source? #f
        #:tests? #f  ; Skip tests to avoid dependency issues
-       #:cargo-inputs ()))
+       #:phases
+       (modify-phases %standard-phases
+         (add-after 'unpack 'fix-cargo-deps
+           (lambda _
+             ;; Adjust dependency versions to match what's available in Guix
+             (substitute* "Cargo.toml"
+               (("4.5.41") "4.5.23")
+               (("1.0.219") "1.0.216")
+               (("0.9.34") "0.9.30"))
+             ;; Remove Cargo.lock to regenerate with new versions
+             (delete-file "Cargo.lock")
+             #t)))
+       #:cargo-inputs
+       (("rust-clap" ,rust-clap-4)
+        ("rust-serde" ,rust-serde-1)
+        ("rust-serde-yaml" ,rust-serde-yaml-0.9))
+       #:cargo-development-inputs
+       (("rust-clap-derive" ,rust-clap-derive-4)
+        ("rust-serde-derive" ,rust-serde-derive-1))))
     (native-inputs
      (list pkg-config))
     (home-page "https://github.com/daynin/monk")
