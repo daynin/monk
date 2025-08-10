@@ -70,6 +70,14 @@ You can also install `monk` using Nix:
 nix profile install github:daynin/monk
 ```
 
+#### Installing monk with Guix
+
+You can install `monk` using GNU Guix directly from GitHub:
+
+```sh
+guix package -f <(curl -s https://raw.githubusercontent.com/daynin/monk/main/monk.scm)
+```
+
 
 ### Usage
 
