@@ -53,7 +53,7 @@
 manage and automate Git hooks easily using a YAML configuration file.  With
 Monk, you can define hooks for various Git events (pre-commit, post-commit,
 pre-push, etc.) and run custom scripts or commands automatically.")
-    (license license:expat))) ; MIT license
+    (license license:mit)))
 
 ;; Return the package for direct installation
 monk
