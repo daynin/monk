@@ -11,8 +11,7 @@
              (guix download)
              (guix git-download)
              (guix build-system cargo)
-             ((guix licenses) #:prefix license:)
-             (gnu packages crates-io)
+             (guix licenses)
              (gnu packages pkg-config))
 
 (define-public monk
@@ -24,21 +23,16 @@
        (method git-fetch)
        (uri (git-reference
              (url "https://github.com/daynin/monk")
-             ;; Use the main branch for latest, or specify a tag/commit
              (commit "main")))
        (file-name (git-file-name name version))
        (sha256
         (base32
-         ;; This will be computed automatically by Guix
-         ;; when fetching from git
-         "0000000000000000000000000000000000000000000000000000"))))
+         ;; Note: This hash needs to be updated when the main branch changes
+         ;; To get the correct hash: guix hash -rx <path-to-cloned-repo>
+         "0s5j5hf27vzrr095xg678qh7j7lghzv5z0f77wvlxjszcvys4ch5"))))
     (build-system cargo-build-system)
     (arguments
-     `(#:cargo-inputs
-       (("rust-clap" ,rust-clap-4)
-        ("rust-serde" ,rust-serde-1)
-        ("rust-serde-yaml" ,rust-serde-yaml-0.9))
-       #:phases
+     `(#:phases
        (modify-phases %standard-phases
          (add-after 'unpack 'update-cargo-lock
            (lambda _
@@ -53,7 +47,7 @@
 manage and automate Git hooks easily using a YAML configuration file.  With
 Monk, you can define hooks for various Git events (pre-commit, post-commit,
 pre-push, etc.) and run custom scripts or commands automatically.")
-    (license license:mit)))
+    (license mit)))
 
 ;; Return the package for direct installation
 monk
