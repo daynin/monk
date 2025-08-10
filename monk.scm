@@ -11,7 +11,7 @@
              (guix download)
              (guix git-download)
              (guix build-system cargo)
-             (guix licenses)
+             ((guix licenses) #:prefix license:)
              (gnu packages crates-io)
              (gnu packages pkg-config))
 
