@@ -17,7 +17,7 @@
 (define-public monk
   (package
     (name "monk")
-    (version "0.3.0")
+    (version "0.3.1")
     (source
      (origin
        (method git-fetch)
