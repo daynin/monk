@@ -86,6 +86,8 @@ Note: This will automatically fetch and build the latest version from the main b
 
 Create a configuration file named `monk.yaml` in your project root:
 
+#### Simple Configuration
+
 ```yaml
 pre-commit:
   commands:
@@ -97,6 +99,54 @@ pre-push:
     - cargo test
 
 ```
+
+#### Path-Based Configuration
+
+For projects with multiple modules or mixed technologies, you can configure different hooks for different paths:
+
+```yaml
+pre-commit:
+  paths:
+    "api/":
+      commands:
+        - cargo fmt -- --check
+        - cargo clippy -- -D warnings
+      working_directory: "api"
+    "frontend/":
+      commands:
+        - npm run lint
+        - npm test
+      working_directory: "frontend"
+    "shared/":
+      commands:
+        - cargo fmt -- --check
+        - cargo clippy -- -D warnings
+        - cargo test
+      working_directory: "shared"
+
+pre-push:
+  paths:
+    "api/":
+      commands:
+        - cargo test
+        - cargo build --release
+      working_directory: "api"
+    "frontend/":
+      commands:
+        - npm run build
+      working_directory: "frontend"
+
+# Global hooks (run for any changes)
+commit-msg:
+  commands:
+    - echo "Validating commit message..."
+```
+
+**Path-based features:**
+- 🎯 **Selective execution**: Only runs hooks for paths with changed files
+- 📁 **Working directory**: Each hook can specify its working directory  
+- 🔄 **Multi-module support**: Perfect for monorepos with multiple Rust crates
+- 🌐 **Mixed technology**: Supports different tech stacks in the same repo
 
 
 If you installed `monk` manually, run:

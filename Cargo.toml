@@ -1,6 +1,6 @@
 [package]
 name = "monk"
-version = "0.2.5"
+version = "0.3.0"
 authors = ["Sergey Golovin <sergey.golovin@protonmail.com>"]
 edition = "2021"
 license = "MIT"
