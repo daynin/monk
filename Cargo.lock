@@ -152,6 +152,7 @@ checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "serde",
 ]
 
 [[package]]
@@ -180,11 +181,12 @@ checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
 
 [[package]]
 name = "monk"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "clap",
  "colored",
  "console",
+ "indexmap",
  "serde",
  "serde_yaml",
 ]

@@ -1,6 +1,6 @@
 [package]
 name = "monk"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Sergey Golovin <sergey.golovin@protonmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -17,6 +17,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
 console = "0.15.8"
 colored = "2.1.0"
+indexmap = { version = "2.0", features = ["serde"] }
 
 [lib]
 name = "monk"

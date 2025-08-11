@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::fs;
 use std::path::Path;
 use colored::*;
@@ -59,7 +59,9 @@ pub enum Commands {
     #[command(about = "Run a specific hook manually")]
     Run { 
         #[arg(help = "Name of the hook to run (e.g., pre-commit, pre-push)")]
-        hook_name: String 
+        hook_name: String,
+        #[arg(long, help = "Only run hooks for changed files (default: run all hooks)")]
+        changed_only: bool,
     },
     #[command(about = "Uninstall all monk hooks and restore backups")]
     Uninstall,
@@ -68,14 +70,14 @@ pub enum Commands {
 #[derive(Deserialize)]
 pub struct Config {
     #[serde(flatten)]
-    pub hooks: HashMap<String, HookConfig>,
+    pub hooks: IndexMap<String, HookConfig>,
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum HookConfig {
     Simple(Hook),
-    PathBased { paths: HashMap<String, Hook> },
+    PathBased { paths: IndexMap<String, Hook> },
 }
 
 #[derive(Deserialize)]
@@ -86,21 +88,33 @@ pub struct Hook {
 }
 
 pub fn get_changed_files() -> Vec<String> {
+    // First try to get staged files
     let output = std::process::Command::new("git")
         .args(["diff", "--cached", "--name-only"])
         .output()
-        .unwrap_or_else(|_| {
-            std::process::Command::new("git")
-                .args(["diff", "--name-only", "HEAD~1"])
-                .output()
-                .expect("Failed to get changed files")
-        });
+        .expect("Failed to run git command");
 
-    String::from_utf8_lossy(&output.stdout)
+    let staged_files: Vec<String> = String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty())
-        .collect()
+        .collect();
+
+    // If no staged files, try to get changed files from last commit
+    if staged_files.is_empty() {
+        let output = std::process::Command::new("git")
+            .args(["diff", "--name-only", "HEAD~1"])
+            .output()
+            .expect("Failed to get changed files");
+
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        staged_files
+    }
 }
 
 pub fn find_matching_path_configs<'a>(
@@ -198,10 +212,10 @@ pub fn install_hook(hook_name: &str) {
         "#!/bin/sh\n\
         if monk -h >/dev/null 2>&1\n\
         then\n\
-            exec monk run {hook_name}\n\
+            exec monk run {hook_name} --changed-only\n\
         else\n\
             cargo install monk\n\
-            exec monk run {hook_name}\n\
+            exec monk run {hook_name} --changed-only\n\
         fi"
     );
 
@@ -242,13 +256,13 @@ pub fn uninstall_hooks(config: &Config) {
     println!("{} All hooks uninstalled successfully!", CHECKMARK);
 }
 
-pub fn run_hook(config: &Config, hook_name: &str) {
+pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
     let changed_files = get_changed_files();
     
-    let matching_hooks = if changed_files.is_empty() {
-        find_all_path_configs(config, hook_name)
-    } else {
+    let matching_hooks = if changed_only && !changed_files.is_empty() {
         find_matching_path_configs(config, hook_name, &changed_files)
+    } else {
+        find_all_path_configs(config, hook_name)
     };
 
     if matching_hooks.is_empty() {

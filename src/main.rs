@@ -32,7 +32,7 @@ pub fn main() {
 
     match cli.command {
         Commands::Install => install_hooks(&config),
-        Commands::Run { hook_name } => run_hook(&config, &hook_name),
+        Commands::Run { hook_name, changed_only } => run_hook(&config, &hook_name, changed_only),
         Commands::Uninstall => uninstall_hooks(&config),
     }
 }
