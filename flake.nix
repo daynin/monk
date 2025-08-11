@@ -29,7 +29,7 @@
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "monk";
-          version = "0.3.2";
+          version = "0.3.3";
           src = ./.;
           cargoLock = {
             lockFile = ./Cargo.lock;

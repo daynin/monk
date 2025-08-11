@@ -3,7 +3,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use indicatif::{ProgressBar, ProgressStyle};
 use colored::*;
 use console::Emoji;
 
@@ -166,16 +165,7 @@ pub fn install_hooks(config: &Config) {
         fs::create_dir_all(git_hooks_dir).expect("Failed to create .git/hooks directory");
     }
 
-    let hooks: Vec<_> = config.hooks.keys().collect();
-    let pb = ProgressBar::new(hooks.len() as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-        .unwrap()
-        .progress_chars("#>-"));
-
-    for hook_name in hooks {
-        pb.set_message(format!("Installing {}", hook_name.bold()));
-        
+    for hook_name in config.hooks.keys() {
         let hook_path = format!("{git_hooks_dir}/{hook_name}");
         let backup_path = format!("{hook_path}.backup");
 
@@ -191,10 +181,9 @@ pub fn install_hooks(config: &Config) {
 
         install_hook(hook_name);
         println!("{} Installed hook {}", CHECKMARK, hook_name.green().bold());
-        pb.inc(1);
     }
     
-    pb.finish_with_message(format!("{} All hooks installed successfully!", ROCKET));
+    println!("{} All hooks installed successfully!", ROCKET);
 }
 
 pub fn install_hook(hook_name: &str) {
@@ -232,17 +221,8 @@ pub fn install_hook(hook_name: &str) {
 
 pub fn uninstall_hooks(config: &Config) {
     let git_hooks_dir = ".git/hooks";
-    let hooks: Vec<_> = config.hooks.keys().collect();
     
-    let pb = ProgressBar::new(hooks.len() as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.red} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-        .unwrap()
-        .progress_chars("#>-"));
-
-    for hook_name in hooks {
-        pb.set_message(format!("Uninstalling {}", hook_name.bold()));
-        
+    for hook_name in config.hooks.keys() {
         let hook_path = format!("{git_hooks_dir}/{hook_name}");
         let backup_path = format!("{hook_path}.backup");
 
@@ -257,16 +237,14 @@ pub fn uninstall_hooks(config: &Config) {
         } else {
             println!("{} No hook found for {}", WRENCH, hook_name.yellow());
         }
-        pb.inc(1);
     }
     
-    pb.finish_with_message(format!("{} All hooks uninstalled successfully!", CHECKMARK));
+    println!("{} All hooks uninstalled successfully!", CHECKMARK);
 }
 
 pub fn run_hook(config: &Config, hook_name: &str) {
     let changed_files = get_changed_files();
     
-    // For manual execution, if no changed files are found, we still want to run all path-based hooks
     let matching_hooks = if changed_files.is_empty() {
         find_all_path_configs(config, hook_name)
     } else {
@@ -279,13 +257,6 @@ pub fn run_hook(config: &Config, hook_name: &str) {
     }
 
     println!("{} Running {} hook", ROCKET, hook_name.cyan().bold());
-    
-    let total_commands: usize = matching_hooks.iter().map(|h| h.commands.len()).sum();
-    let pb = ProgressBar::new(total_commands as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-        .unwrap()
-        .progress_chars("#>-"));
 
     for hook in matching_hooks {
         if let Some(ref working_dir) = hook.working_directory {
@@ -293,8 +264,6 @@ pub fn run_hook(config: &Config, hook_name: &str) {
         }
         
         for command_str in &hook.commands {
-            pb.set_message(format!("Executing command"));
-            
             let mut command = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" });
 
             if cfg!(windows) {
@@ -309,15 +278,12 @@ pub fn run_hook(config: &Config, hook_name: &str) {
 
             let status = command.status().expect("Failed to execute command");
             if !status.success() {
-                pb.abandon_with_message(format!("{} Command failed", CROSS));
                 std::process::exit(status.code().unwrap_or(1));
             }
-            
-            pb.inc(1);
         }
     }
     
-    pb.finish_with_message(format!("{} Hook {} completed successfully!", CHECKMARK, hook_name.green().bold()));
+    println!("{} Hook {} completed successfully!", CHECKMARK, hook_name.green().bold());
 }
 
 pub fn init() {

@@ -1,6 +1,6 @@
 [package]
 name = "monk"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Sergey Golovin <sergey.golovin@protonmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -15,7 +15,6 @@ categories = ["command-line-utilities"]
 clap = { version = "4.5.41", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.34"
-indicatif = "0.17.8"
 console = "0.15.8"
 colored = "2.1.0"
 
