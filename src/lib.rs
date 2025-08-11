@@ -16,7 +16,7 @@ static WRENCH: Emoji<'_, '_> = Emoji("🔧 ", "- ");
 #[derive(Parser)]
 #[command(
     name = "monk",
-    about = "🐵 Monk - Simple Git hooks manager",
+    about = "☯️ Monk - Simple Git hooks manager",
     long_about = "Monk is a simple and powerful Git hooks manager written in Rust.
 It allows you to manage and automate Git hooks easily using a YAML configuration file.
 
@@ -132,6 +132,28 @@ pub fn find_matching_path_configs<'a>(
     matching_hooks
 }
 
+pub fn find_all_path_configs<'a>(
+    config: &'a Config,
+    hook_name: &str,
+) -> Vec<&'a Hook> {
+    let mut all_hooks = Vec::new();
+
+    if let Some(hook_config) = config.hooks.get(hook_name) {
+        match hook_config {
+            HookConfig::Simple(hook) => {
+                all_hooks.push(hook);
+            }
+            HookConfig::PathBased { paths } => {
+                for (_path_pattern, hook) in paths {
+                    all_hooks.push(hook);
+                }
+            }
+        }
+    }
+
+    all_hooks
+}
+
 pub fn read_config() -> Result<Config, Box<dyn std::error::Error>> {
     let config_str = fs::read_to_string("monk.yaml")?;
     let config: Config = serde_yaml::from_str(&config_str)?;
@@ -243,7 +265,13 @@ pub fn uninstall_hooks(config: &Config) {
 
 pub fn run_hook(config: &Config, hook_name: &str) {
     let changed_files = get_changed_files();
-    let matching_hooks = find_matching_path_configs(config, hook_name, &changed_files);
+    
+    // For manual execution, if no changed files are found, we still want to run all path-based hooks
+    let matching_hooks = if changed_files.is_empty() {
+        find_all_path_configs(config, hook_name)
+    } else {
+        find_matching_path_configs(config, hook_name, &changed_files)
+    };
 
     if matching_hooks.is_empty() {
         println!("{} No commands defined for hook '{}'", CROSS, hook_name.red().bold());
@@ -295,4 +323,62 @@ pub fn run_hook(config: &Config, hook_name: &str) {
 pub fn init() {
     let config = read_config().expect("Failed to read monk.yaml configuration");
     install_hooks(&config);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_all_path_configs_empty() {
+        let yaml = r#"
+other-hook:
+  commands:
+    - echo "test"
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let hooks = find_all_path_configs(&config, "pre-commit");
+        assert_eq!(hooks.len(), 0);
+    }
+
+    #[test]
+    fn test_path_based_vs_simple_config() {
+        let simple_yaml = r#"
+pre-commit:
+  commands:
+    - cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(simple_yaml).unwrap();
+        let hooks = find_all_path_configs(&config, "pre-commit");
+        assert_eq!(hooks.len(), 1);
+
+        let path_yaml = r#"
+pre-commit:
+  paths:
+    "src/":
+      commands:
+        - cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(path_yaml).unwrap();
+        let hooks = find_all_path_configs(&config, "pre-commit");
+        assert_eq!(hooks.len(), 1);
+    }
+
+    #[test]
+    fn test_multiple_commands_in_hook() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    - cargo fmt -- --check
+    - cargo clippy -- -D warnings
+    - cargo test
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let hooks = find_all_path_configs(&config, "pre-commit");
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].commands.len(), 3);
+        assert_eq!(hooks[0].commands[0], "cargo fmt -- --check");
+        assert_eq!(hooks[0].commands[1], "cargo clippy -- -D warnings");
+        assert_eq!(hooks[0].commands[2], "cargo test");
+    }
 }

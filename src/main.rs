@@ -5,7 +5,6 @@ use colored::*;
 use console::Emoji;
 
 static CROSS: Emoji<'_, '_> = Emoji("❌ ", "✗ ");
-static GEAR: Emoji<'_, '_> = Emoji("⚙️ ", "* ");
 
 pub fn main() {
     let cli = Cli::parse();
@@ -30,8 +29,6 @@ pub fn main() {
             std::process::exit(1);
         }
     };
-
-    println!("{} Monk Git hooks manager", GEAR);
 
     match cli.command {
         Commands::Install => install_hooks(&config),
