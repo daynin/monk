@@ -2,6 +2,38 @@ use indexmap::IndexMap;
 use serde::de::Deserializer;
 use serde::Deserialize;
 use std::fs;
+use std::path::Path;
+
+enum ConfigFormat {
+    Yaml,
+    Toml,
+}
+
+const CONFIG_EXTENSIONS: &[(&str, ConfigFormat)] =
+    &[(".yaml", ConfigFormat::Yaml), (".toml", ConfigFormat::Toml)];
+
+fn find_config_file(base_name: &str) -> Option<(String, &'static ConfigFormat)> {
+    for (extension, format) in CONFIG_EXTENSIONS {
+        let path = format!("{base_name}{extension}");
+        if Path::new(&path).exists() {
+            return Some((path, format));
+        }
+    }
+    None
+}
+
+fn parse_to_yaml_value(
+    content: &str,
+    format: &ConfigFormat,
+) -> Result<serde_yaml::Value, Box<dyn std::error::Error>> {
+    match format {
+        ConfigFormat::Yaml => Ok(serde_yaml::from_str(content)?),
+        ConfigFormat::Toml => {
+            let toml_value: toml::Value = toml::from_str(content)?;
+            Ok(serde_yaml::to_value(toml_value)?)
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SkipCondition {
@@ -198,6 +230,11 @@ fn merge_top_level_yaml(base: serde_yaml::Value, local: serde_yaml::Value) -> se
     }
 }
 
+pub fn parse_toml_config(toml_content: &str) -> Result<Config, Box<dyn std::error::Error>> {
+    let value = parse_to_yaml_value(toml_content, &ConfigFormat::Toml)?;
+    Ok(serde_yaml::from_value(value)?)
+}
+
 pub fn merge_yaml_configs(
     base_yaml: &str,
     local_yaml: &str,
@@ -209,17 +246,30 @@ pub fn merge_yaml_configs(
     Ok(config)
 }
 
-pub fn read_config() -> Result<Config, Box<dyn std::error::Error>> {
-    let config_str = fs::read_to_string("monk.yaml")?;
+pub fn merge_toml_into_yaml(
+    base_yaml: &str,
+    local_toml: &str,
+) -> Result<Config, Box<dyn std::error::Error>> {
+    let base_value = parse_to_yaml_value(base_yaml, &ConfigFormat::Yaml)?;
+    let local_value = parse_to_yaml_value(local_toml, &ConfigFormat::Toml)?;
+    let merged_value = merge_top_level_yaml(base_value, local_value);
+    Ok(serde_yaml::from_value(merged_value)?)
+}
 
-    let local_path = "monk-local.yaml";
-    if !std::path::Path::new(local_path).exists() {
-        let config: Config = serde_yaml::from_str(&config_str)?;
-        return Ok(config);
+pub fn read_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let (config_path, config_format) =
+        find_config_file("monk").ok_or("No monk.yaml or monk.toml found")?;
+    let config_content = fs::read_to_string(&config_path)?;
+    let base_value = parse_to_yaml_value(&config_content, config_format)?;
+
+    if let Some((local_path, local_format)) = find_config_file("monk-local") {
+        let local_content = fs::read_to_string(&local_path)?;
+        let local_value = parse_to_yaml_value(&local_content, local_format)?;
+        let merged = merge_top_level_yaml(base_value, local_value);
+        return Ok(serde_yaml::from_value(merged)?);
     }
 
-    let local_str = fs::read_to_string(local_path)?;
-    merge_yaml_configs(&config_str, &local_str)
+    Ok(serde_yaml::from_value(base_value)?)
 }
 
 #[cfg(test)]
@@ -1021,5 +1071,200 @@ pre-push:
         assert_eq!(config.hooks.len(), 2);
         assert!(config.hooks.contains_key("pre-commit"));
         assert!(config.hooks.contains_key("pre-push"));
+    }
+
+    fn parse_toml(toml_str: &str) -> Config {
+        parse_toml_config(toml_str).unwrap()
+    }
+
+    #[test]
+    fn test_toml_simple_config() {
+        let config = parse_toml(
+            r#"
+[pre-commit.commands.fmt]
+run = "cargo fmt -- --check"
+
+[pre-commit.commands.clippy]
+run = "cargo clippy -- -D warnings"
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.commands.len(), 2);
+            assert_eq!(
+                hook.commands.get("fmt").unwrap().run,
+                "cargo fmt -- --check"
+            );
+            assert_eq!(
+                hook.commands.get("clippy").unwrap().run,
+                "cargo clippy -- -D warnings"
+            );
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_with_parallel_and_skip() {
+        let config = parse_toml(
+            r#"
+[pre-commit]
+parallel = true
+skip = ["merge", "rebase"]
+
+[pre-commit.commands.fmt]
+run = "cargo fmt -- --check"
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.parallel);
+            assert_eq!(hook.skip, vec![SkipCondition::Merge, SkipCondition::Rebase]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_with_glob_and_exclude() {
+        let config = parse_toml(
+            r#"
+[pre-commit.commands.lint]
+run = "eslint {staged_files}"
+glob = ["*.js", "*.ts"]
+exclude = ["*.min.js"]
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.glob, vec!["*.js", "*.ts"]);
+            assert_eq!(lint.exclude, vec!["*.min.js"]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_with_working_directory() {
+        let config = parse_toml(
+            r#"
+[pre-commit]
+working_directory = "backend"
+
+[pre-commit.commands.test]
+run = "cargo test"
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.working_directory, Some("backend".to_string()));
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_path_based() {
+        let config = parse_toml(
+            r#"
+[pre-commit.paths."frontend/".commands.lint]
+run = "npm run lint"
+
+[pre-commit.paths."backend/".commands.fmt]
+run = "cargo fmt -- --check"
+"#,
+        );
+        if let HookConfig::PathBased { paths } = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(paths.len(), 2);
+            assert_eq!(
+                paths
+                    .get("frontend/")
+                    .unwrap()
+                    .commands
+                    .get("lint")
+                    .unwrap()
+                    .run,
+                "npm run lint"
+            );
+            assert_eq!(
+                paths
+                    .get("backend/")
+                    .unwrap()
+                    .commands
+                    .get("fmt")
+                    .unwrap()
+                    .run,
+                "cargo fmt -- --check"
+            );
+        } else {
+            panic!("Expected PathBased hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_multiple_hooks() {
+        let config = parse_toml(
+            r#"
+[pre-commit.commands.fmt]
+run = "cargo fmt -- --check"
+
+[pre-push.commands.test]
+run = "cargo test"
+"#,
+        );
+        assert_eq!(config.hooks.len(), 2);
+        assert!(config.hooks.contains_key("pre-commit"));
+        assert!(config.hooks.contains_key("pre-push"));
+    }
+
+    #[test]
+    fn test_toml_skip_ref_as_map() {
+        let config = parse_toml(
+            r#"
+[pre-push.commands.deploy]
+run = "./deploy.sh"
+skip = [{ ref = "main" }]
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-push").unwrap() {
+            let deploy = hook.commands.get("deploy").unwrap();
+            assert_eq!(deploy.skip, vec![SkipCondition::Ref("main".to_string())]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_yaml_base_with_toml_local() {
+        let merged = merge_toml_into_yaml(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    clippy:
+      run: cargo clippy -- -D warnings
+"#,
+            r#"
+[pre-commit]
+parallel = true
+
+[pre-commit.commands.clippy]
+run = "cargo clippy"
+
+[pre-commit.commands.mycheck]
+run = "./check.sh"
+"#,
+        )
+        .unwrap();
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert!(hook.parallel);
+            assert_eq!(hook.commands.len(), 3);
+            assert_eq!(
+                hook.commands.get("fmt").unwrap().run,
+                "cargo fmt -- --check"
+            );
+            assert_eq!(hook.commands.get("clippy").unwrap().run, "cargo clippy");
+            assert_eq!(hook.commands.get("mycheck").unwrap().run, "./check.sh");
+        } else {
+            panic!("Expected Simple hook config");
+        }
     }
 }

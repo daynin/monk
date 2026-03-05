@@ -27,21 +27,12 @@ pub fn main() {
     let config = match read_config() {
         Ok(config) => config,
         Err(e) => {
-            eprintln!(
-                "{} {}",
-                CROSS,
-                "Failed to read monk.yaml configuration".red().bold()
-            );
+            eprintln!("{} {}", CROSS, "Failed to read configuration".red().bold());
             eprintln!("   {}", format!("Error: {}", e).yellow());
             eprintln!(
                 "   {}",
-                "Create a monk.yaml file in your project root.".yellow()
+                "Create a monk.yaml or monk.toml file in your project root.".yellow()
             );
-            eprintln!("   {}", "Example configuration:".yellow());
-            eprintln!("   {}", "pre-commit:".blue());
-            eprintln!("   {}", "  commands:".blue());
-            eprintln!("   {}", "    - cargo fmt -- --check".blue());
-            eprintln!("   {}", "    - cargo clippy".blue());
             std::process::exit(1);
         }
     };

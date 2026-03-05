@@ -16,7 +16,8 @@ pub(crate) static SKIP: Emoji<'_, '_> = Emoji("⏭️  ", ">> ");
 
 pub use cli::{Cli, Commands};
 pub use config::{
-    merge_yaml_configs, read_config, Command, Config, Hook, HookConfig, SkipCondition,
+    merge_toml_into_yaml, merge_yaml_configs, parse_toml_config, read_config, Command, Config,
+    Hook, HookConfig, SkipCondition,
 };
 pub use git::{
     current_branch, get_all_tracked_files, get_changed_files, get_push_files, get_staged_files,
@@ -29,6 +30,6 @@ pub use runner::{
 };
 
 pub fn init() {
-    let config = read_config().expect("Failed to read monk.yaml configuration");
+    let config = read_config().expect("Failed to read monk configuration");
     install_hooks(&config);
 }

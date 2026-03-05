@@ -84,7 +84,7 @@ Note: This will automatically fetch and build the latest version from the main b
 
 ### Usage
 
-Create a configuration file named `monk.yaml` in your project root:
+Create a configuration file named `monk.yaml` (or `monk.toml`) in your project root:
 
 ```yaml
 pre-commit:
@@ -334,7 +334,29 @@ Merge rules:
 - **Skip conditions**: local replaces base (not concatenated).
 - **Different hook variants** (Simple vs PathBased): local replaces base entirely.
 
-If `monk-local.yaml` does not exist, `monk.yaml` is used as-is.
+If `monk-local.yaml` does not exist, `monk.yaml` is used as-is. Local configs also support TOML format (`monk-local.toml`). Main and local configs can use different formats.
+
+#### TOML Configuration
+
+Monk supports TOML as an alternative to YAML. Create a `monk.toml` file instead of `monk.yaml`:
+
+```toml
+[pre-commit]
+parallel = true
+
+[pre-commit.commands.fmt]
+run = "cargo fmt -- --check"
+glob = ["*.rs"]
+
+[pre-commit.commands.clippy]
+run = "cargo clippy -- -D warnings"
+
+[pre-push.commands.test]
+run = "cargo test"
+skip = ["merge"]
+```
+
+Monk searches for config files in this order: `monk.yaml`, `monk.toml`. The first one found is used. The same applies to local overrides: `monk-local.yaml`, `monk-local.toml`.
 
 #### CLI
 

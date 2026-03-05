@@ -4,7 +4,7 @@ version = "0.3.4"
 authors = ["Sergey Golovin <sergey.golovin@protonmail.com>"]
 edition = "2021"
 license = "MIT"
-description = "Monk is a simple Git hooks manager written in Rust. It allows you to manage and automate Git hooks easily using a YAML configuration file."
+description = "Monk is a simple Git hooks manager written in Rust. It allows you to manage and automate Git hooks easily using a YAML or TOML configuration file."
 readme = "README.md"
 homepage = "https://github.com/daynin/monk"
 repository = "https://github.com/daynin/monk"
@@ -19,6 +19,7 @@ console = "0.16.2"
 colored = "3.0.0"
 indexmap = { version = "2.13", features = ["serde"] }
 globset = "0.4"
+toml = "0.8"
 
 [lib]
 name = "monk"

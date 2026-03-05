@@ -14,6 +14,7 @@ This directory contains integration tests for the monk Git hooks manager.
 - `parallel_execution.rs` - Tests for `parallel: true` hook-level parallel execution
 - `skip_conditions.rs` - Tests for `skip:` conditions on hooks and commands (merge, rebase, ref, run)
 - `local_config.rs` - Tests for `monk-local.yaml` config overrides and deep-merge behavior
+- `toml_config.rs` - Tests for `monk.toml` TOML configuration format and cross-format merging
 
 ## Running Tests
 
@@ -34,4 +35,5 @@ cargo test --test glob_filtering
 cargo test --test parallel_execution
 cargo test --test skip_conditions
 cargo test --test local_config
+cargo test --test toml_config
 ```
