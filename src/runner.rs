@@ -3,10 +3,15 @@ use std::time::{Duration, Instant};
 
 use colored::Colorize;
 
-use crate::config::{Config, Hook, HookConfig};
-use crate::git::{get_all_tracked_files, get_changed_files, get_push_files, get_staged_files};
+use globset::Glob;
+
+use crate::config::{Config, Hook, HookConfig, SkipCondition};
+use crate::git::{
+    current_branch, get_all_tracked_files, get_changed_files, get_push_files, get_staged_files,
+    is_merge, is_rebase,
+};
 use crate::glob_filter::filter_files_by_glob;
-use crate::{CHECKMARK, CROSS, FOLDER, ROCKET, WRENCH};
+use crate::{CHECKMARK, CROSS, FOLDER, ROCKET, SKIP, WRENCH};
 
 const STAGED_FILES_PLACEHOLDER: &str = "{staged_files}";
 const PUSH_FILES_PLACEHOLDER: &str = "{push_files}";
@@ -240,10 +245,70 @@ struct PreparedCommand {
     working_dir: Option<String>,
 }
 
+fn evaluate_skip_condition(condition: &SkipCondition) -> bool {
+    match condition {
+        SkipCondition::Merge => is_merge(),
+        SkipCondition::Rebase => is_rebase(),
+        SkipCondition::Ref(pattern) => match current_branch() {
+            Some(branch) => match_branch_pattern(&branch, pattern),
+            None => false,
+        },
+        SkipCondition::Run(command) => {
+            let mut shell = build_shell_command(command, None);
+            shell
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            shell
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
+    }
+}
+
+fn match_branch_pattern(branch: &str, pattern: &str) -> bool {
+    if !pattern.contains('*') && !pattern.contains('?') && !pattern.contains('[') {
+        return branch == pattern;
+    }
+
+    Glob::new(pattern)
+        .map(|glob| glob.compile_matcher().is_match(branch))
+        .unwrap_or(false)
+}
+
+fn should_skip(conditions: &[SkipCondition]) -> bool {
+    conditions.iter().any(evaluate_skip_condition)
+}
+
+fn skip_reason(conditions: &[SkipCondition]) -> String {
+    for condition in conditions {
+        if evaluate_skip_condition(condition) {
+            return match condition {
+                SkipCondition::Merge => "merge".to_string(),
+                SkipCondition::Rebase => "rebase".to_string(),
+                SkipCondition::Ref(pattern) => format!("ref: {pattern}"),
+                SkipCondition::Run(command) => format!("run: {command}"),
+            };
+        }
+    }
+    "skip".to_string()
+}
+
 fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
     let mut prepared = Vec::new();
 
     for (command_name, command) in &hook.commands {
+        if should_skip(&command.skip) {
+            let reason = skip_reason(&command.skip);
+            println!(
+                "{} {} {}",
+                WRENCH,
+                command_name.cyan().bold(),
+                format!("(skip: {reason})").yellow()
+            );
+            continue;
+        }
+
         let expanded_commands =
             match expand_file_placeholders(&command.run, &command.glob, &command.exclude) {
                 Some(commands) => commands,
@@ -464,6 +529,11 @@ fn print_parallel_summary(results: &[CommandResult]) {
 }
 
 pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
+    if std::env::var("MONK").as_deref() == Ok("0") {
+        println!("{} Skipping all hooks {}", SKIP, "(MONK=0)".yellow());
+        return;
+    }
+
     let changed_files = get_changed_files();
 
     let matching_hooks = if changed_only && !changed_files.is_empty() {
@@ -484,6 +554,17 @@ pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
     println!("{} Running {} hook", ROCKET, hook_name.cyan().bold());
 
     for hook in matching_hooks {
+        if should_skip(&hook.skip) {
+            let reason = skip_reason(&hook.skip);
+            println!(
+                "{} Skipping {} {}",
+                SKIP,
+                hook_name.cyan().bold(),
+                format!("({reason})").yellow()
+            );
+            continue;
+        }
+
         if let Some(ref working_dir) = hook.working_directory {
             println!("{} {}", FOLDER, working_dir.blue().bold());
         }
@@ -625,5 +706,50 @@ mod tests {
     fn test_format_duration_subsecond() {
         let duration = Duration::from_millis(42);
         assert_eq!(format_duration(duration), "0.04s");
+    }
+
+    #[test]
+    fn test_should_skip_empty_conditions() {
+        assert!(!should_skip(&[]));
+    }
+
+    #[test]
+    fn test_should_skip_merge_when_not_merging() {
+        assert!(!should_skip(&[SkipCondition::Merge]));
+    }
+
+    #[test]
+    fn test_should_skip_rebase_when_not_rebasing() {
+        assert!(!should_skip(&[SkipCondition::Rebase]));
+    }
+
+    #[test]
+    fn test_should_skip_ref_no_match() {
+        assert!(!should_skip(&[SkipCondition::Ref(
+            "nonexistent-branch-xyz".to_string()
+        )]));
+    }
+
+    #[test]
+    fn test_should_skip_run_false_condition() {
+        assert!(!should_skip(&[SkipCondition::Run("false".to_string())]));
+    }
+
+    #[test]
+    fn test_should_skip_run_true_condition() {
+        assert!(should_skip(&[SkipCondition::Run("true".to_string())]));
+    }
+
+    #[test]
+    fn test_match_branch_exact() {
+        assert!(match_branch_pattern("main", "main"));
+        assert!(!match_branch_pattern("main", "develop"));
+    }
+
+    #[test]
+    fn test_match_branch_glob() {
+        assert!(match_branch_pattern("release/1.0", "release/*"));
+        assert!(match_branch_pattern("feature/abc", "feature/*"));
+        assert!(!match_branch_pattern("main", "release/*"));
     }
 }

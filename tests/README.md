@@ -12,6 +12,7 @@ This directory contains integration tests for the monk Git hooks manager.
 - `staged_files.rs` - Tests for `{staged_files}`, `{push_files}`, `{all_files}` placeholder expansion
 - `glob_filtering.rs` - Tests for `glob:` and `exclude:` file filtering on commands
 - `parallel_execution.rs` - Tests for `parallel: true` hook-level parallel execution
+- `skip_conditions.rs` - Tests for `skip:` conditions on hooks and commands (merge, rebase, ref, run)
 
 ## Running Tests
 
@@ -30,4 +31,5 @@ cargo test --test named_commands
 cargo test --test staged_files
 cargo test --test glob_filtering
 cargo test --test parallel_execution
+cargo test --test skip_conditions
 ```

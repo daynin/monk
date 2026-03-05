@@ -27,6 +27,20 @@ pub fn get_all_tracked_files() -> Vec<String> {
     run_git_command(&["ls-files"])
 }
 
+pub fn is_merge() -> bool {
+    std::path::Path::new(".git/MERGE_HEAD").exists()
+}
+
+pub fn is_rebase() -> bool {
+    std::path::Path::new(".git/rebase-merge").exists()
+        || std::path::Path::new(".git/rebase-apply").exists()
+}
+
+pub fn current_branch() -> Option<String> {
+    let result = run_git_command(&["rev-parse", "--abbrev-ref", "HEAD"]);
+    result.into_iter().next()
+}
+
 pub fn get_changed_files() -> Vec<String> {
     let staged = get_staged_files();
     if !staged.is_empty() {
@@ -44,6 +58,23 @@ mod tests {
         let files = run_git_command(&["version"]);
         assert!(!files.is_empty());
         assert!(files[0].starts_with("git version"));
+    }
+
+    #[test]
+    fn test_current_branch_returns_value() {
+        let branch = current_branch();
+        assert!(branch.is_some());
+        assert!(!branch.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_is_merge_false_in_normal_state() {
+        assert!(!is_merge());
+    }
+
+    #[test]
+    fn test_is_rebase_false_in_normal_state() {
+        assert!(!is_rebase());
     }
 
     #[test]

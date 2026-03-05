@@ -3,6 +3,62 @@ use serde::de::Deserializer;
 use serde::Deserialize;
 use std::fs;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SkipCondition {
+    Merge,
+    Rebase,
+    Ref(String),
+    Run(String),
+}
+
+fn deserialize_skip_conditions<'de, D>(deserializer: D) -> Result<Vec<SkipCondition>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = match Option::<serde_yaml::Value>::deserialize(deserializer)? {
+        Some(value) => value,
+        None => return Ok(Vec::new()),
+    };
+
+    let raw_list = match value {
+        serde_yaml::Value::Sequence(seq) => seq,
+        other => vec![other],
+    };
+
+    raw_list
+        .into_iter()
+        .map(|item| parse_skip_condition(item).map_err(serde::de::Error::custom))
+        .collect()
+}
+
+fn parse_skip_condition(value: serde_yaml::Value) -> Result<SkipCondition, String> {
+    match value {
+        serde_yaml::Value::String(keyword) => match keyword.as_str() {
+            "merge" => Ok(SkipCondition::Merge),
+            "rebase" => Ok(SkipCondition::Rebase),
+            other => Err(format!("Unknown skip condition: {other}")),
+        },
+        serde_yaml::Value::Mapping(map) => {
+            if let Some(pattern) = map.get(serde_yaml::Value::String("ref".to_string())) {
+                let pattern = pattern
+                    .as_str()
+                    .ok_or("'ref' value must be a string")?
+                    .to_string();
+                Ok(SkipCondition::Ref(pattern))
+            } else if let Some(command) = map.get(serde_yaml::Value::String("run".to_string())) {
+                let command = command
+                    .as_str()
+                    .ok_or("'run' value must be a string")?
+                    .to_string();
+                Ok(SkipCondition::Run(command))
+            } else {
+                Err("Skip map must have 'ref' or 'run' key".to_string())
+            }
+        }
+        _ => Err("Skip condition must be a string or map".to_string()),
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct Config {
     #[serde(flatten)]
@@ -24,6 +80,8 @@ pub struct Hook {
     pub working_directory: Option<String>,
     #[serde(default)]
     pub parallel: bool,
+    #[serde(default, deserialize_with = "deserialize_skip_conditions")]
+    pub skip: Vec<SkipCondition>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -35,6 +93,8 @@ pub struct Command {
     pub glob: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_string_or_list")]
     pub exclude: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_skip_conditions")]
+    pub skip: Vec<SkipCondition>,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +139,7 @@ where
                         working_directory: None,
                         glob: Vec::new(),
                         exclude: Vec::new(),
+                        skip: Vec::new(),
                     };
                     (name, command)
                 })
@@ -435,6 +496,153 @@ pre-commit:
             assert!(!backend.parallel);
         } else {
             panic!("Expected PathBased hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_single_string() {
+        let yaml = r#"
+pre-commit:
+  skip: merge
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.skip, vec![SkipCondition::Merge]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_list() {
+        let yaml = r#"
+pre-commit:
+  skip:
+    - merge
+    - rebase
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.skip, vec![SkipCondition::Merge, SkipCondition::Rebase]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_ref() {
+        let yaml = r#"
+pre-commit:
+  skip:
+    - ref: main
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.skip, vec![SkipCondition::Ref("main".to_string())]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_run_condition() {
+        let yaml = r#"
+pre-commit:
+  skip:
+    - run: test -n "$CI"
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(
+                hook.skip,
+                vec![SkipCondition::Run("test -n \"$CI\"".to_string())]
+            );
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_mixed() {
+        let yaml = r#"
+pre-commit:
+  skip:
+    - merge
+    - ref: "release/*"
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(
+                hook.skip,
+                vec![
+                    SkipCondition::Merge,
+                    SkipCondition::Ref("release/*".to_string())
+                ]
+            );
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_defaults_to_empty() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.skip.is_empty());
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_skip_on_command() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    deploy:
+      run: ./deploy.sh
+      skip:
+        - ref: main
+    test:
+      run: cargo test
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let deploy = hook.commands.get("deploy").unwrap();
+            assert_eq!(deploy.skip, vec![SkipCondition::Ref("main".to_string())]);
+
+            let test = hook.commands.get("test").unwrap();
+            assert!(test.skip.is_empty());
+        } else {
+            panic!("Expected Simple hook config");
         }
     }
 

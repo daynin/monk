@@ -269,6 +269,46 @@ pre-commit:
 
 All commands run simultaneously and their output is buffered. A summary with pass/fail status and timing is printed after all commands finish. If any command fails, the hook fails.
 
+#### Skip Conditions
+
+Skip hooks or individual commands based on git state, branch, or shell conditions:
+
+```yaml
+pre-commit:
+  skip:
+    - merge
+    - rebase
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    slow-test:
+      run: cargo test --all
+      skip:
+        - run: "test -n \"$CI\""
+
+pre-push:
+  commands:
+    deploy:
+      run: ./deploy.sh
+      skip:
+        - ref: main
+    test:
+      run: cargo test
+      skip:
+        - ref: "release/*"
+```
+
+| Condition | Skips when |
+|---|---|
+| `merge` | A merge is in progress (`.git/MERGE_HEAD` exists) |
+| `rebase` | A rebase is in progress |
+| `ref: <pattern>` | Current branch matches the pattern (supports globs like `release/*`) |
+| `run: <command>` | Shell command exits with code 0 |
+
+Skip accepts a single condition or a list. If any condition matches, the hook or command is skipped.
+
+To disable all hooks globally, set the environment variable `MONK=0`.
+
 #### CLI
 
 ```sh

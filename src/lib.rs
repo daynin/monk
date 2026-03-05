@@ -12,10 +12,14 @@ pub(crate) static CROSS: Emoji<'_, '_> = Emoji("❌ ", "✗ ");
 pub(crate) static FOLDER: Emoji<'_, '_> = Emoji("📁 ", "> ");
 pub(crate) static ROCKET: Emoji<'_, '_> = Emoji("🚀 ", ">> ");
 pub(crate) static WRENCH: Emoji<'_, '_> = Emoji("🔧 ", "- ");
+pub(crate) static SKIP: Emoji<'_, '_> = Emoji("⏭️  ", ">> ");
 
 pub use cli::{Cli, Commands};
-pub use config::{read_config, Command, Config, Hook, HookConfig};
-pub use git::{get_all_tracked_files, get_changed_files, get_push_files, get_staged_files};
+pub use config::{read_config, Command, Config, Hook, HookConfig, SkipCondition};
+pub use git::{
+    current_branch, get_all_tracked_files, get_changed_files, get_push_files, get_staged_files,
+    is_merge, is_rebase,
+};
 pub use glob_filter::filter_files_by_glob;
 pub use hooks::{install_hook, install_hooks, uninstall_hooks};
 pub use runner::{
