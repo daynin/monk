@@ -35,12 +35,12 @@ pre-commit:
     let config: Config = serde_yaml::from_str(yaml).unwrap();
     let hooks = find_all_path_configs(&config, "pre-commit");
     assert_eq!(hooks.len(), 3);
-    
-    let command_counts: Vec<usize> = hooks.iter().map(|h| h.commands.len()).collect();
+
+    let command_counts: Vec<usize> = hooks.iter().map(|hook| hook.commands.len()).collect();
     assert!(command_counts.contains(&2));
     assert!(command_counts.contains(&1));
-    
-    let has_working_dir = hooks.iter().any(|h| h.working_directory.is_some());
+
+    let has_working_dir = hooks.iter().any(|hook| hook.working_directory.is_some());
     assert!(has_working_dir);
 }
 
@@ -72,14 +72,14 @@ pre-commit:
         - mdbook test
 "#;
     let config: Config = serde_yaml::from_str(yaml).unwrap();
-    
+
     let all_hooks = find_all_path_configs(&config, "pre-commit");
     assert_eq!(all_hooks.len(), 3);
-    
+
     let frontend_files = vec!["frontend/src/App.js".to_string()];
     let matching_hooks = find_matching_path_configs(&config, "pre-commit", &frontend_files);
     assert_eq!(matching_hooks.len(), 1);
-    
+
     let no_files: Vec<String> = vec![];
     let no_matching_hooks = find_matching_path_configs(&config, "pre-commit", &no_files);
     assert_eq!(no_matching_hooks.len(), 0);
@@ -90,22 +90,22 @@ fn test_config_reading_success() {
     let temp_dir = std::env::temp_dir().join("monk_test_success");
     std::fs::create_dir_all(&temp_dir).unwrap();
     let config_path = temp_dir.join("monk.yaml");
-    
+
     let yaml_content = r#"
 pre-commit:
   commands:
     - echo "test"
 "#;
     std::fs::write(&config_path, yaml_content).unwrap();
-    
+
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&temp_dir).unwrap();
-    
+
     let result = read_config();
     assert!(result.is_ok());
     let config = result.unwrap();
     assert!(config.hooks.contains_key("pre-commit"));
-    
+
     std::env::set_current_dir(original_dir).unwrap();
     std::fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -114,13 +114,13 @@ pre-commit:
 fn test_config_reading_failure() {
     let temp_dir = std::env::temp_dir().join("monk_test_failure");
     std::fs::create_dir_all(&temp_dir).unwrap();
-    
+
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&temp_dir).unwrap();
-    
+
     let result = read_config();
     assert!(result.is_err());
-    
+
     std::env::set_current_dir(original_dir).unwrap();
     std::fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -141,11 +141,11 @@ pre-commit:
 "#;
     let config: Config = serde_yaml::from_str(yaml).unwrap();
     let hooks = find_all_path_configs(&config, "pre-commit");
-    
+
     assert_eq!(hooks.len(), 2);
     for hook in hooks {
         assert!(hook.working_directory.is_some());
-        let wd = hook.working_directory.as_ref().unwrap();
-        assert!(wd == "api" || wd == "frontend");
+        let working_dir = hook.working_directory.as_ref().unwrap();
+        assert!(working_dir == "api" || working_dir == "frontend");
     }
 }

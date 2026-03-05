@@ -41,4 +41,3 @@ pre-commit:
     let hooks = find_matching_path_configs(&config, "pre-commit", &multiple_modules);
     assert_eq!(hooks.len(), 2);
 }
-

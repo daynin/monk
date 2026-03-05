@@ -6,7 +6,9 @@ This directory contains integration tests for the monk Git hooks manager.
 
 - `simple_config.rs` - Tests for simple/basic hook configuration format
 - `path_based_config.rs` - Tests for path-based hook configuration and path matching logic
+- `manual_execution.rs` - Tests for config reading, hook finding, and working directory handling
 - `rust_submodules.rs` - Tests for multiple Rust submodule configurations
+- `named_commands.rs` - Tests for named commands format, backward compatibility, and ordering
 
 ## Running Tests
 
@@ -18,6 +20,8 @@ cargo test
 To run a specific test file:
 ```bash
 cargo test --test simple_config
-cargo test --test path_based_config  
+cargo test --test path_based_config
+cargo test --test manual_execution
 cargo test --test rust_submodules
+cargo test --test named_commands
 ```

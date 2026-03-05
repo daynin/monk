@@ -1,8 +1,8 @@
 use clap::Parser;
-use monk::{install_hooks, read_config, run_hook, uninstall_hooks, Cli, Commands};
-use std::path::Path;
 use colored::*;
 use console::Emoji;
+use monk::{install_hooks, read_config, run_hook, uninstall_hooks, Cli, Commands};
+use std::path::Path;
 
 static CROSS: Emoji<'_, '_> = Emoji("❌ ", "✗ ");
 
@@ -10,17 +10,33 @@ pub fn main() {
     let cli = Cli::parse();
 
     if !Path::new(".git").exists() {
-        eprintln!("{} {}", CROSS, "Error: .git directory not found. Ensure you're in a Git repository.".red().bold());
-        eprintln!("   {}", "Initialize a Git repository with: git init".yellow());
+        eprintln!(
+            "{} {}",
+            CROSS,
+            "Error: .git directory not found. Ensure you're in a Git repository."
+                .red()
+                .bold()
+        );
+        eprintln!(
+            "   {}",
+            "Initialize a Git repository with: git init".yellow()
+        );
         std::process::exit(1);
     }
-    
+
     let config = match read_config() {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("{} {}", CROSS, "Failed to read monk.yaml configuration".red().bold());
+            eprintln!(
+                "{} {}",
+                CROSS,
+                "Failed to read monk.yaml configuration".red().bold()
+            );
             eprintln!("   {}", format!("Error: {}", e).yellow());
-            eprintln!("   {}", "Create a monk.yaml file in your project root.".yellow());
+            eprintln!(
+                "   {}",
+                "Create a monk.yaml file in your project root.".yellow()
+            );
             eprintln!("   {}", "Example configuration:".yellow());
             eprintln!("   {}", "pre-commit:".blue());
             eprintln!("   {}", "  commands:".blue());
@@ -32,7 +48,10 @@ pub fn main() {
 
     match cli.command {
         Commands::Install => install_hooks(&config),
-        Commands::Run { hook_name, changed_only } => run_hook(&config, &hook_name, changed_only),
+        Commands::Run {
+            hook_name,
+            changed_only,
+        } => run_hook(&config, &hook_name, changed_only),
         Commands::Uninstall => uninstall_hooks(&config),
     }
 }

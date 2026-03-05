@@ -16,4 +16,3 @@ pre-commit:
     assert_eq!(hooks.len(), 1);
     assert_eq!(hooks[0].commands.len(), 2);
 }
-
