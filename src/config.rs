@@ -149,10 +149,77 @@ where
     }
 }
 
+fn deep_merge_yaml(base: serde_yaml::Value, local: serde_yaml::Value) -> serde_yaml::Value {
+    match (base, local) {
+        (serde_yaml::Value::Mapping(mut base_map), serde_yaml::Value::Mapping(local_map)) => {
+            for (key, local_value) in local_map {
+                let merged = match base_map.remove(&key) {
+                    Some(base_value) => deep_merge_yaml(base_value, local_value),
+                    None => local_value,
+                };
+                base_map.insert(key, merged);
+            }
+            serde_yaml::Value::Mapping(base_map)
+        }
+        (_, local) => local,
+    }
+}
+
+fn is_hook_variant_change(base: &serde_yaml::Value, local: &serde_yaml::Value) -> bool {
+    let paths_key = serde_yaml::Value::String("paths".to_string());
+    let base_has_paths = base
+        .as_mapping()
+        .is_some_and(|mapping| mapping.contains_key(&paths_key));
+    let local_has_paths = local
+        .as_mapping()
+        .is_some_and(|mapping| mapping.contains_key(&paths_key));
+    base_has_paths != local_has_paths
+}
+
+fn merge_top_level_yaml(base: serde_yaml::Value, local: serde_yaml::Value) -> serde_yaml::Value {
+    match (base, local) {
+        (serde_yaml::Value::Mapping(mut base_map), serde_yaml::Value::Mapping(local_map)) => {
+            for (key, local_value) in local_map {
+                let merged = match base_map.remove(&key) {
+                    Some(base_value) => {
+                        if is_hook_variant_change(&base_value, &local_value) {
+                            local_value
+                        } else {
+                            deep_merge_yaml(base_value, local_value)
+                        }
+                    }
+                    None => local_value,
+                };
+                base_map.insert(key, merged);
+            }
+            serde_yaml::Value::Mapping(base_map)
+        }
+        (_, local) => local,
+    }
+}
+
+pub fn merge_yaml_configs(
+    base_yaml: &str,
+    local_yaml: &str,
+) -> Result<Config, Box<dyn std::error::Error>> {
+    let base_value: serde_yaml::Value = serde_yaml::from_str(base_yaml)?;
+    let local_value: serde_yaml::Value = serde_yaml::from_str(local_yaml)?;
+    let merged_value = merge_top_level_yaml(base_value, local_value);
+    let config: Config = serde_yaml::from_value(merged_value)?;
+    Ok(config)
+}
+
 pub fn read_config() -> Result<Config, Box<dyn std::error::Error>> {
     let config_str = fs::read_to_string("monk.yaml")?;
-    let config: Config = serde_yaml::from_str(&config_str)?;
-    Ok(config)
+
+    let local_path = "monk-local.yaml";
+    if !std::path::Path::new(local_path).exists() {
+        let config: Config = serde_yaml::from_str(&config_str)?;
+        return Ok(config);
+    }
+
+    let local_str = fs::read_to_string(local_path)?;
+    merge_yaml_configs(&config_str, &local_str)
 }
 
 #[cfg(test)]
@@ -641,6 +708,298 @@ pre-commit:
 
             let test = hook.commands.get("test").unwrap();
             assert!(test.skip.is_empty());
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    fn parse_config(yaml: &str) -> Config {
+        serde_yaml::from_str(yaml).unwrap()
+    }
+
+    fn merge(base_yaml: &str, local_yaml: &str) -> Config {
+        merge_yaml_configs(base_yaml, local_yaml).unwrap()
+    }
+
+    #[test]
+    fn test_merge_adds_new_hook() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-push:
+  commands:
+    test:
+      run: cargo test
+"#,
+        );
+        assert_eq!(merged.hooks.len(), 2);
+        assert!(merged.hooks.contains_key("pre-commit"));
+        assert!(merged.hooks.contains_key("pre-push"));
+    }
+
+    #[test]
+    fn test_merge_overrides_command() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    clippy:
+      run: cargo clippy -- -D warnings
+"#,
+            r#"
+pre-commit:
+  commands:
+    clippy:
+      run: cargo clippy
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.commands.get("clippy").unwrap().run, "cargo clippy");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_adds_new_command() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  commands:
+    mycheck:
+      run: ./check.sh
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.commands.len(), 2);
+            assert_eq!(hook.commands.get("fmt").unwrap().run, "cargo fmt");
+            assert_eq!(hook.commands.get("mycheck").unwrap().run, "./check.sh");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_overrides_parallel() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  parallel: true
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert!(hook.parallel);
+            assert_eq!(hook.commands.get("fmt").unwrap().run, "cargo fmt");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_overrides_working_directory() {
+        let merged = merge(
+            r#"
+pre-commit:
+  working_directory: frontend
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  working_directory: backend
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.working_directory, Some("backend".to_string()));
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_overrides_skip() {
+        let merged = merge(
+            r#"
+pre-commit:
+  skip:
+    - merge
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  skip:
+    - rebase
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.skip, vec![SkipCondition::Rebase]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_preserves_base_skip_when_local_empty() {
+        let merged = merge(
+            r#"
+pre-commit:
+  skip:
+    - merge
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  commands:
+    mycheck:
+      run: ./check.sh
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.skip, vec![SkipCondition::Merge]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_preserves_base_commands() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+    clippy:
+      run: cargo clippy
+    test:
+      run: cargo test
+"#,
+            r#"
+pre-commit:
+  commands:
+    clippy:
+      run: cargo clippy --all
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.commands.len(), 3);
+            assert_eq!(hook.commands.get("fmt").unwrap().run, "cargo fmt");
+            assert_eq!(
+                hook.commands.get("clippy").unwrap().run,
+                "cargo clippy --all"
+            );
+            assert_eq!(hook.commands.get("test").unwrap().run, "cargo test");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_different_hook_variants_local_wins() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  paths:
+    "src/":
+      commands:
+        lint:
+          run: cargo clippy
+"#,
+        );
+        if let HookConfig::PathBased { paths } = merged.hooks.get("pre-commit").unwrap() {
+            assert!(paths.contains_key("src/"));
+        } else {
+            panic!("Expected PathBased hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_path_based_hooks() {
+        let merged = merge(
+            r#"
+pre-commit:
+  paths:
+    "frontend/":
+      commands:
+        lint:
+          run: npm run lint
+    "backend/":
+      commands:
+        fmt:
+          run: cargo fmt
+"#,
+            r#"
+pre-commit:
+  paths:
+    "frontend/":
+      parallel: true
+      commands:
+        test:
+          run: npm test
+    "infra/":
+      commands:
+        validate:
+          run: terraform validate
+"#,
+        );
+        if let HookConfig::PathBased { paths } = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(paths.len(), 3);
+
+            let frontend = paths.get("frontend/").unwrap();
+            assert!(frontend.parallel);
+            assert_eq!(frontend.commands.len(), 2);
+            assert!(frontend.commands.contains_key("lint"));
+            assert!(frontend.commands.contains_key("test"));
+
+            assert!(paths.contains_key("backend/"));
+            assert!(paths.contains_key("infra/"));
+        } else {
+            panic!("Expected PathBased hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_empty_local() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            "{}",
+        );
+        assert_eq!(merged.hooks.len(), 1);
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.commands.get("fmt").unwrap().run, "cargo fmt");
         } else {
             panic!("Expected Simple hook config");
         }

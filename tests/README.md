@@ -13,6 +13,7 @@ This directory contains integration tests for the monk Git hooks manager.
 - `glob_filtering.rs` - Tests for `glob:` and `exclude:` file filtering on commands
 - `parallel_execution.rs` - Tests for `parallel: true` hook-level parallel execution
 - `skip_conditions.rs` - Tests for `skip:` conditions on hooks and commands (merge, rebase, ref, run)
+- `local_config.rs` - Tests for `monk-local.yaml` config overrides and deep-merge behavior
 
 ## Running Tests
 
@@ -32,4 +33,5 @@ cargo test --test staged_files
 cargo test --test glob_filtering
 cargo test --test parallel_execution
 cargo test --test skip_conditions
+cargo test --test local_config
 ```

@@ -15,7 +15,9 @@ pub(crate) static WRENCH: Emoji<'_, '_> = Emoji("🔧 ", "- ");
 pub(crate) static SKIP: Emoji<'_, '_> = Emoji("⏭️  ", ">> ");
 
 pub use cli::{Cli, Commands};
-pub use config::{read_config, Command, Config, Hook, HookConfig, SkipCondition};
+pub use config::{
+    merge_yaml_configs, read_config, Command, Config, Hook, HookConfig, SkipCondition,
+};
 pub use git::{
     current_branch, get_all_tracked_files, get_changed_files, get_push_files, get_staged_files,
     is_merge, is_rebase,

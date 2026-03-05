@@ -309,6 +309,33 @@ Skip accepts a single condition or a list. If any condition matches, the hook or
 
 To disable all hooks globally, set the environment variable `MONK=0`.
 
+#### Local Config Overrides
+
+Create a `monk-local.yaml` file (add it to `.gitignore`) to override or extend your project's `monk.yaml` without affecting teammates:
+
+```yaml
+pre-commit:
+  parallel: true
+  commands:
+    clippy:
+      run: cargo clippy
+    mycheck:
+      run: ./my-local-check.sh
+
+pre-push:
+  skip:
+    - ref: main
+```
+
+Merge rules:
+- **Hooks**: merged by name. New hooks are added, existing hooks are deep-merged.
+- **Commands**: merged by name. A local command with the same name fully replaces the base command. New commands are added.
+- **Scalar fields** (`parallel`, `working_directory`): local value overrides base.
+- **Skip conditions**: local replaces base (not concatenated).
+- **Different hook variants** (Simple vs PathBased): local replaces base entirely.
+
+If `monk-local.yaml` does not exist, `monk.yaml` is used as-is.
+
 #### CLI
 
 ```sh
