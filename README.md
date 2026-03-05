@@ -86,91 +86,177 @@ Note: This will automatically fetch and build the latest version from the main b
 
 Create a configuration file named `monk.yaml` in your project root:
 
-#### Simple Configuration
+```yaml
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    clippy:
+      run: cargo clippy -- -D warnings
+
+pre-push:
+  commands:
+    test:
+      run: cargo test
+```
+
+Then install the hooks:
+
+```sh
+monk install
+```
+
+If you added monk as a build dependency with `build.rs` (see above), hooks are installed automatically when you build your project.
+
+---
+
+### Documentation
+
+#### Named Commands
+
+Each command has a name and a `run` field:
+
+```yaml
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    clippy:
+      run: cargo clippy -- -D warnings
+    test:
+      run: cargo test
+```
+
+Commands run in the order they are defined. If any command fails, execution stops and the hook fails.
+
+<details>
+<summary>Legacy format (backward compatible)</summary>
+
+Plain string arrays still work:
 
 ```yaml
 pre-commit:
   commands:
     - cargo fmt -- --check
     - cargo clippy -- -D warnings
+```
+
+Commands are auto-named `cmd1`, `cmd2`, etc. The named format is recommended for new configs.
+
+</details>
+
+#### File Placeholders
+
+Use placeholders to pass file lists to your tools:
+
+| Placeholder | Expands to |
+|---|---|
+| `{staged_files}` | Files staged for commit (`git diff --cached`) |
+| `{push_files}` | Files changed between local and remote |
+| `{all_files}` | All tracked files in the repository |
+
+```yaml
+pre-commit:
+  commands:
+    lint:
+      run: eslint {staged_files}
+    fmt:
+      run: prettier --write {staged_files}
 
 pre-push:
   commands:
-    - cargo test
-
+    test:
+      run: cargo test {push_files}
 ```
+
+When a placeholder expands to an empty file list, the command is automatically skipped. If the expanded command exceeds the OS argument length limit, it is automatically split into batches.
+
+#### Glob Filtering
+
+Use `glob` and `exclude` to filter which files a command applies to:
+
+```yaml
+pre-commit:
+  commands:
+    lint-js:
+      run: eslint {staged_files}
+      glob: "*.{js,ts}"
+      exclude: "*.min.js"
+    lint-rs:
+      run: cargo clippy
+      glob: "*.rs"
+    fmt:
+      run: prettier --write {staged_files}
+      glob:
+        - "*.js"
+        - "*.ts"
+        - "*.css"
+```
+
+Both `glob` and `exclude` accept a single pattern or a list of patterns. Patterns without a `/` match files in any directory (e.g., `*.rs` matches `src/main.rs`).
+
+When `glob` is set but no files match, the command is skipped. When `glob` is used with a placeholder like `{staged_files}`, only matching files are passed to the command.
+
+When `glob` is set without a file placeholder, monk checks staged files against the pattern and skips the command if none match.
 
 #### Path-Based Configuration
 
-For projects with multiple modules or mixed technologies, you can configure different hooks for different paths:
+For monorepos with multiple modules or mixed technologies:
 
 ```yaml
 pre-commit:
   paths:
-    "api/":
-      commands:
-        - cargo fmt -- --check
-        - cargo clippy -- -D warnings
-      working_directory: "api"
     "frontend/":
       commands:
-        - npm run lint
-        - npm test
-      working_directory: "frontend"
-    "shared/":
+        lint:
+          run: npm run lint
+        test:
+          run: npm test
+      working_directory: frontend
+    "backend/":
       commands:
-        - cargo fmt -- --check
-        - cargo clippy -- -D warnings
-        - cargo test
-      working_directory: "shared"
+        fmt:
+          run: cargo fmt -- --check
+        clippy:
+          run: cargo clippy -- -D warnings
+      working_directory: backend
+```
 
-pre-push:
-  paths:
-    "api/":
-      commands:
-        - cargo test
-        - cargo build --release
-      working_directory: "api"
-    "frontend/":
-      commands:
-        - npm run build
-      working_directory: "frontend"
+When using `monk run --changed-only` (the default for installed hooks), only hooks whose path prefix matches the changed files will run.
 
-# Global hooks (run for any changes)
-commit-msg:
+#### Working Directory
+
+Set `working_directory` at the hook level or the command level. Command-level overrides hook-level:
+
+```yaml
+pre-commit:
   commands:
-    - echo "Validating commit message..."
+    frontend-lint:
+      run: npm run lint
+      working_directory: frontend
+    backend-test:
+      run: cargo test
+      working_directory: backend
 ```
 
-**Path-based features:**
-- 🎯 **Selective execution**: Only runs hooks for paths with changed files
-- 📁 **Working directory**: Each hook can specify its working directory  
-- 🔄 **Multi-module support**: Perfect for monorepos with multiple Rust crates
-- 🌐 **Mixed technology**: Supports different tech stacks in the same repo
+Or at the hook level for all commands:
 
+```yaml
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    test:
+      run: cargo test
+  working_directory: backend
+```
 
-If you installed `monk` manually, run:
+#### CLI
 
 ```sh
-monk install
+monk install       # Install hooks defined in monk.yaml
+monk run <hook>    # Run a hook manually (e.g., monk run pre-commit)
+monk uninstall     # Remove hooks and restore backups
 ```
 
-If you added it as a build dependency and set up `build.rs` as shown above, the hooks will be installed automatically when you build your project.
-
-#### Running hooks manually
-
-To run specific hooks manually, use the `run` command
-
-```sh
-monk run pre-commit
-```
-
-#### Removing Hooks
-
-`monk` automatically creates backup files for existing hooks and restores them when you remove monk's hooks.
-
-To remove the hooks, run:
-
-```sh  
-monk uninstall
-```
+`monk` automatically backs up existing hooks before installing. Running `monk uninstall` restores the original hooks.

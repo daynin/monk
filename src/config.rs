@@ -29,6 +29,28 @@ pub struct Command {
     pub run: String,
     #[serde(default)]
     pub working_directory: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_list")]
+    pub glob: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_list")]
+    pub exclude: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StringOrList {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+fn deserialize_string_or_list<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<StringOrList>::deserialize(deserializer)? {
+        Some(StringOrList::Single(pattern)) => Ok(vec![pattern]),
+        Some(StringOrList::Multiple(patterns)) => Ok(patterns),
+        None => Ok(Vec::new()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -53,6 +75,8 @@ where
                     let command = Command {
                         run,
                         working_directory: None,
+                        glob: Vec::new(),
+                        exclude: Vec::new(),
                     };
                     (name, command)
                 })
@@ -239,6 +263,106 @@ pre-commit:
 
         if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
             assert_eq!(hook.commands.len(), 0);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_glob_as_string() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint {staged_files}
+      glob: "*.js"
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.glob, vec!["*.js"]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_glob_as_list() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint {staged_files}
+      glob:
+        - "*.js"
+        - "*.ts"
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.glob, vec!["*.js", "*.ts"]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_no_glob() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let fmt = hook.commands.get("fmt").unwrap();
+            assert!(fmt.glob.is_empty());
+            assert!(fmt.exclude.is_empty());
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_glob_and_exclude_together() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    fmt:
+      run: prettier --write {staged_files}
+      glob: "*.{js,ts,css}"
+      exclude: "*.min.js"
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let fmt = hook.commands.get("fmt").unwrap();
+            assert_eq!(fmt.glob, vec!["*.{js,ts,css}"]);
+            assert_eq!(fmt.exclude, vec!["*.min.js"]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_legacy_commands_have_empty_glob() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    - cargo fmt
+    - cargo clippy
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            for (_name, command) in &hook.commands {
+                assert!(command.glob.is_empty());
+                assert!(command.exclude.is_empty());
+            }
         } else {
             panic!("Expected Simple hook config");
         }

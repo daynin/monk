@@ -2,6 +2,7 @@ use colored::Colorize;
 
 use crate::config::{Config, Hook, HookConfig};
 use crate::git::{get_all_tracked_files, get_changed_files, get_push_files, get_staged_files};
+use crate::glob_filter::filter_files_by_glob;
 use crate::{CHECKMARK, CROSS, FOLDER, ROCKET, WRENCH};
 
 const STAGED_FILES_PLACEHOLDER: &str = "{staged_files}";
@@ -59,32 +60,44 @@ fn has_file_placeholder(template: &str) -> bool {
         || template.contains(ALL_FILES_PLACEHOLDER)
 }
 
+fn has_glob_patterns(include_patterns: &[String], exclude_patterns: &[String]) -> bool {
+    !include_patterns.is_empty() || !exclude_patterns.is_empty()
+}
+
 struct PlaceholderExpansion {
     placeholder: &'static str,
     files: Vec<String>,
 }
 
-fn collect_placeholder_expansions(template: &str) -> Vec<PlaceholderExpansion> {
+fn collect_placeholder_expansions(
+    template: &str,
+    include_patterns: &[String],
+    exclude_patterns: &[String],
+) -> Vec<PlaceholderExpansion> {
     let mut expansions = Vec::new();
 
     if template.contains(STAGED_FILES_PLACEHOLDER) {
+        let files = filter_files_by_glob(get_staged_files(), include_patterns, exclude_patterns);
         expansions.push(PlaceholderExpansion {
             placeholder: STAGED_FILES_PLACEHOLDER,
-            files: get_staged_files(),
+            files,
         });
     }
 
     if template.contains(PUSH_FILES_PLACEHOLDER) {
+        let files = filter_files_by_glob(get_push_files(), include_patterns, exclude_patterns);
         expansions.push(PlaceholderExpansion {
             placeholder: PUSH_FILES_PLACEHOLDER,
-            files: get_push_files(),
+            files,
         });
     }
 
     if template.contains(ALL_FILES_PLACEHOLDER) {
+        let files =
+            filter_files_by_glob(get_all_tracked_files(), include_patterns, exclude_patterns);
         expansions.push(PlaceholderExpansion {
             placeholder: ALL_FILES_PLACEHOLDER,
-            files: get_all_tracked_files(),
+            files,
         });
     }
 
@@ -100,12 +113,24 @@ fn expand_simple(template: &str, expansions: &[PlaceholderExpansion]) -> String 
     result
 }
 
-pub fn expand_file_placeholders(template: &str) -> Option<Vec<String>> {
+pub fn expand_file_placeholders(
+    template: &str,
+    include_patterns: &[String],
+    exclude_patterns: &[String],
+) -> Option<Vec<String>> {
     if !has_file_placeholder(template) {
+        if !has_glob_patterns(include_patterns, exclude_patterns) {
+            return Some(vec![template.to_string()]);
+        }
+        let matching_staged =
+            filter_files_by_glob(get_staged_files(), include_patterns, exclude_patterns);
+        if matching_staged.is_empty() {
+            return None;
+        }
         return Some(vec![template.to_string()]);
     }
 
-    let expansions = collect_placeholder_expansions(template);
+    let expansions = collect_placeholder_expansions(template, include_patterns, exclude_patterns);
 
     let any_placeholder_empty = expansions.iter().any(|exp| exp.files.is_empty());
     if any_placeholder_empty {
@@ -238,18 +263,19 @@ pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
         }
 
         for (command_name, command) in &hook.commands {
-            let expanded_commands = match expand_file_placeholders(&command.run) {
-                Some(commands) => commands,
-                None => {
-                    println!(
-                        "{} {} {}",
-                        WRENCH,
-                        command_name.cyan().bold(),
-                        "(skip: no files)".yellow()
-                    );
-                    continue;
-                }
-            };
+            let expanded_commands =
+                match expand_file_placeholders(&command.run, &command.glob, &command.exclude) {
+                    Some(commands) => commands,
+                    None => {
+                        println!(
+                            "{} {} {}",
+                            WRENCH,
+                            command_name.cyan().bold(),
+                            "(skip: no matching files)".yellow()
+                        );
+                        continue;
+                    }
+                };
 
             println!("{} {}", WRENCH, command_name.cyan().bold());
 
@@ -274,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_expand_no_placeholders() {
-        let result = expand_file_placeholders("cargo fmt -- --check");
+        let result = expand_file_placeholders("cargo fmt -- --check", &[], &[]);
         assert_eq!(result, Some(vec!["cargo fmt -- --check".to_string()]));
     }
 

@@ -10,6 +10,7 @@ This directory contains integration tests for the monk Git hooks manager.
 - `rust_submodules.rs` - Tests for multiple Rust submodule configurations
 - `named_commands.rs` - Tests for named commands format, backward compatibility, and ordering
 - `staged_files.rs` - Tests for `{staged_files}`, `{push_files}`, `{all_files}` placeholder expansion
+- `glob_filtering.rs` - Tests for `glob:` and `exclude:` file filtering on commands
 
 ## Running Tests
 
@@ -26,4 +27,5 @@ cargo test --test manual_execution
 cargo test --test rust_submodules
 cargo test --test named_commands
 cargo test --test staged_files
+cargo test --test glob_filtering
 ```
