@@ -251,6 +251,24 @@ pre-commit:
   working_directory: backend
 ```
 
+#### Parallel Execution
+
+Run all commands in a hook concurrently with `parallel: true`:
+
+```yaml
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    clippy:
+      run: cargo clippy -- -D warnings
+    test:
+      run: cargo test
+```
+
+All commands run simultaneously and their output is buffered. A summary with pass/fail status and timing is printed after all commands finish. If any command fails, the hook fails.
+
 #### CLI
 
 ```sh

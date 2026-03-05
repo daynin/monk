@@ -11,6 +11,7 @@ This directory contains integration tests for the monk Git hooks manager.
 - `named_commands.rs` - Tests for named commands format, backward compatibility, and ordering
 - `staged_files.rs` - Tests for `{staged_files}`, `{push_files}`, `{all_files}` placeholder expansion
 - `glob_filtering.rs` - Tests for `glob:` and `exclude:` file filtering on commands
+- `parallel_execution.rs` - Tests for `parallel: true` hook-level parallel execution
 
 ## Running Tests
 
@@ -28,4 +29,5 @@ cargo test --test rust_submodules
 cargo test --test named_commands
 cargo test --test staged_files
 cargo test --test glob_filtering
+cargo test --test parallel_execution
 ```

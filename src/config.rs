@@ -22,6 +22,8 @@ pub struct Hook {
     pub commands: IndexMap<String, Command>,
     #[serde(default)]
     pub working_directory: Option<String>,
+    #[serde(default)]
+    pub parallel: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -365,6 +367,74 @@ pre-commit:
             }
         } else {
             panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_parallel_true() {
+        let yaml = r#"
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    clippy:
+      run: cargo clippy
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.parallel);
+            assert_eq!(hook.commands.len(), 2);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_parallel_defaults_to_false() {
+        let yaml = r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(!hook.parallel);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_parallel_with_path_based() {
+        let yaml = r#"
+pre-commit:
+  paths:
+    "frontend/":
+      parallel: true
+      commands:
+        lint:
+          run: npm run lint
+        test:
+          run: npm test
+    "backend/":
+      commands:
+        fmt:
+          run: cargo fmt -- --check
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+
+        if let HookConfig::PathBased { paths } = config.hooks.get("pre-commit").unwrap() {
+            let frontend = paths.get("frontend/").unwrap();
+            assert!(frontend.parallel);
+
+            let backend = paths.get("backend/").unwrap();
+            assert!(!backend.parallel);
+        } else {
+            panic!("Expected PathBased hook config");
         }
     }
 

@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::time::{Duration, Instant};
+
 use colored::Colorize;
 
 use crate::config::{Config, Hook, HookConfig};
@@ -218,7 +221,59 @@ fn split_into_batches(
     batches
 }
 
-fn execute_shell_command(command_string: &str, working_dir: Option<&String>) {
+struct CapturedOutput {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+struct CommandResult {
+    command_name: String,
+    success: bool,
+    exit_code: i32,
+    duration: Duration,
+    captured_output: Option<CapturedOutput>,
+}
+
+struct PreparedCommand {
+    command_name: String,
+    expanded_commands: Vec<String>,
+    working_dir: Option<String>,
+}
+
+fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
+    let mut prepared = Vec::new();
+
+    for (command_name, command) in &hook.commands {
+        let expanded_commands =
+            match expand_file_placeholders(&command.run, &command.glob, &command.exclude) {
+                Some(commands) => commands,
+                None => {
+                    println!(
+                        "{} {} {}",
+                        WRENCH,
+                        command_name.cyan().bold(),
+                        "(skip: no matching files)".yellow()
+                    );
+                    continue;
+                }
+            };
+
+        let working_dir = resolve_working_directory(hook, &command.working_directory).cloned();
+
+        prepared.push(PreparedCommand {
+            command_name: command_name.clone(),
+            expanded_commands,
+            working_dir,
+        });
+    }
+
+    prepared
+}
+
+fn build_shell_command(
+    command_string: &str,
+    working_dir: Option<&String>,
+) -> std::process::Command {
     let mut shell_command = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" });
 
     if cfg!(windows) {
@@ -231,9 +286,180 @@ fn execute_shell_command(command_string: &str, working_dir: Option<&String>) {
         shell_command.current_dir(dir);
     }
 
+    shell_command
+}
+
+fn execute_command_inherited(
+    command_string: &str,
+    working_dir: Option<&String>,
+) -> Result<(), i32> {
+    let mut shell_command = build_shell_command(command_string, working_dir);
     let status = shell_command.status().expect("Failed to execute command");
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(status.code().unwrap_or(1))
+    }
+}
+
+fn execute_command_captured(
+    command_string: &str,
+    working_dir: Option<&String>,
+) -> (bool, i32, CapturedOutput) {
+    let mut shell_command = build_shell_command(command_string, working_dir);
+
+    shell_command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let output = shell_command.output().expect("Failed to execute command");
+
+    let success = output.status.success();
+    let exit_code = output.status.code().unwrap_or(1);
+
+    (
+        success,
+        exit_code,
+        CapturedOutput {
+            stdout: output.stdout,
+            stderr: output.stderr,
+        },
+    )
+}
+
+fn run_commands_sequential(prepared: Vec<PreparedCommand>) -> Vec<CommandResult> {
+    let mut results = Vec::new();
+
+    for command in prepared {
+        println!("{} {}", WRENCH, command.command_name.cyan().bold());
+
+        let start = Instant::now();
+        let mut failed = false;
+        let mut exit_code = 0;
+
+        for expanded in &command.expanded_commands {
+            if let Err(code) = execute_command_inherited(expanded, command.working_dir.as_ref()) {
+                failed = true;
+                exit_code = code;
+                break;
+            }
+        }
+
+        let duration = start.elapsed();
+
+        results.push(CommandResult {
+            command_name: command.command_name,
+            success: !failed,
+            exit_code,
+            duration,
+            captured_output: None,
+        });
+
+        if failed {
+            return results;
+        }
+    }
+
+    results
+}
+
+fn run_commands_parallel(prepared: Vec<PreparedCommand>) -> Vec<CommandResult> {
+    let handles: Vec<_> = prepared
+        .into_iter()
+        .map(|command| {
+            std::thread::spawn(move || {
+                let start = Instant::now();
+                let mut combined_stdout = Vec::new();
+                let mut combined_stderr = Vec::new();
+
+                for expanded in &command.expanded_commands {
+                    let (success, code, output) =
+                        execute_command_captured(expanded, command.working_dir.as_ref());
+
+                    combined_stdout.extend(output.stdout);
+                    combined_stderr.extend(output.stderr);
+
+                    if !success {
+                        return CommandResult {
+                            command_name: command.command_name,
+                            success: false,
+                            exit_code: code,
+                            duration: start.elapsed(),
+                            captured_output: Some(CapturedOutput {
+                                stdout: combined_stdout,
+                                stderr: combined_stderr,
+                            }),
+                        };
+                    }
+                }
+
+                CommandResult {
+                    command_name: command.command_name,
+                    success: true,
+                    exit_code: 0,
+                    duration: start.elapsed(),
+                    captured_output: Some(CapturedOutput {
+                        stdout: combined_stdout,
+                        stderr: combined_stderr,
+                    }),
+                }
+            })
+        })
+        .collect();
+
+    handles
+        .into_iter()
+        .map(|handle| handle.join().expect("Command thread panicked"))
+        .collect()
+}
+
+fn format_duration(duration: Duration) -> String {
+    let secs = duration.as_secs_f64();
+    if secs >= 60.0 {
+        let minutes = secs as u64 / 60;
+        let remaining = secs - (minutes as f64 * 60.0);
+        format!("{minutes}m{remaining:.2}s")
+    } else {
+        format!("{secs:.2}s")
+    }
+}
+
+fn print_parallel_summary(results: &[CommandResult]) {
+    for result in results {
+        let timing = format_duration(result.duration);
+        if result.success {
+            println!(
+                "  {} {} ({})",
+                CHECKMARK,
+                result.command_name.cyan().bold(),
+                timing.dimmed()
+            );
+        } else {
+            println!(
+                "  {} {} ({})",
+                CROSS,
+                result.command_name.red().bold(),
+                timing.dimmed()
+            );
+        }
+    }
+
+    for result in results.iter().filter(|result| !result.success) {
+        if let Some(ref output) = result.captured_output {
+            let separator = format!("── {} ──", result.command_name);
+            println!("\n{}", separator.red());
+
+            let stdout = &output.stdout;
+            let stderr = &output.stderr;
+
+            if !stdout.is_empty() {
+                std::io::stdout().write_all(stdout).ok();
+            }
+            if !stderr.is_empty() {
+                std::io::stderr().write_all(stderr).ok();
+            }
+        }
     }
 }
 
@@ -262,28 +488,21 @@ pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
             println!("{} {}", FOLDER, working_dir.blue().bold());
         }
 
-        for (command_name, command) in &hook.commands {
-            let expanded_commands =
-                match expand_file_placeholders(&command.run, &command.glob, &command.exclude) {
-                    Some(commands) => commands,
-                    None => {
-                        println!(
-                            "{} {} {}",
-                            WRENCH,
-                            command_name.cyan().bold(),
-                            "(skip: no matching files)".yellow()
-                        );
-                        continue;
-                    }
-                };
+        let prepared = prepare_commands(hook);
 
-            println!("{} {}", WRENCH, command_name.cyan().bold());
+        let results = if hook.parallel {
+            run_commands_parallel(prepared)
+        } else {
+            run_commands_sequential(prepared)
+        };
 
-            let working_dir = resolve_working_directory(hook, &command.working_directory);
+        if hook.parallel {
+            print_parallel_summary(&results);
+        }
 
-            for expanded_command in &expanded_commands {
-                execute_shell_command(expanded_command, working_dir);
-            }
+        if let Some(failure) = results.iter().find(|result| !result.success) {
+            println!("{} Hook {} failed!", CROSS, hook_name.red().bold());
+            std::process::exit(failure.exit_code);
         }
     }
 
@@ -388,5 +607,23 @@ mod tests {
             .map(|batch| batch.strip_prefix("eslint ").unwrap().split(' ').count())
             .sum();
         assert_eq!(total_files, 5000);
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        let duration = Duration::from_millis(1234);
+        assert_eq!(format_duration(duration), "1.23s");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        let duration = Duration::from_secs(125);
+        assert_eq!(format_duration(duration), "2m5.00s");
+    }
+
+    #[test]
+    fn test_format_duration_subsecond() {
+        let duration = Duration::from_millis(42);
+        assert_eq!(format_duration(duration), "0.04s");
     }
 }
