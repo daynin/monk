@@ -269,6 +269,46 @@ pre-commit:
 
 All commands run simultaneously and their output is buffered. A summary with pass/fail status and timing is printed after all commands finish. If any command fails, the hook fails.
 
+#### Piped Execution
+
+Run commands sequentially in priority order with `piped: true`:
+
+```yaml
+pre-commit:
+  piped: true
+  commands:
+    install:
+      run: npm install
+      priority: 1
+    lint:
+      run: eslint .
+      priority: 2
+    test:
+      run: npm test
+      priority: 3
+```
+
+Commands are sorted by `priority` (lower number runs first). Commands without `priority` run after prioritized ones, in their original definition order. If any command fails, execution stops and the hook fails.
+
+Add `follow: true` to continue running all commands even when one fails:
+
+```yaml
+post-merge:
+  piped: true
+  follow: true
+  commands:
+    bundle:
+      run: bundle install
+      priority: 1
+    migrate:
+      run: bundle exec rails db:migrate
+      priority: 2
+```
+
+With `follow: true`, all commands run regardless of failures and a summary with pass/fail status is printed at the end. If any command failed, the hook fails.
+
+When both `piped` and `parallel` are set, `piped` takes precedence.
+
 #### Skip Conditions
 
 Skip hooks or individual commands based on git state, branch, or shell conditions:

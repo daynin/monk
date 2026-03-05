@@ -105,13 +105,18 @@ pub enum HookConfig {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Hook {
-    #[serde(deserialize_with = "deserialize_commands")]
+    #[serde(default, deserialize_with = "deserialize_commands")]
     pub commands: IndexMap<String, Command>,
     #[serde(default)]
     pub working_directory: Option<String>,
     #[serde(default)]
     pub parallel: bool,
+    #[serde(default)]
+    pub piped: bool,
+    #[serde(default)]
+    pub follow: bool,
     #[serde(default, deserialize_with = "deserialize_skip_conditions")]
     pub skip: Vec<SkipCondition>,
 }
@@ -127,6 +132,8 @@ pub struct Command {
     pub exclude: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_skip_conditions")]
     pub skip: Vec<SkipCondition>,
+    #[serde(default)]
+    pub priority: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -172,6 +179,7 @@ where
                         glob: Vec::new(),
                         exclude: Vec::new(),
                         skip: Vec::new(),
+                        priority: None,
                     };
                     (name, command)
                 })
@@ -1226,6 +1234,157 @@ skip = [{ ref = "main" }]
         if let HookConfig::Simple(hook) = config.hooks.get("pre-push").unwrap() {
             let deploy = hook.commands.get("deploy").unwrap();
             assert_eq!(deploy.skip, vec![SkipCondition::Ref("main".to_string())]);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_piped_true() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  piped: true
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    clippy:
+      run: cargo clippy
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.piped);
+            assert!(!hook.follow);
+            assert_eq!(hook.commands.len(), 2);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_piped_defaults_to_false() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(!hook.piped);
+            assert!(!hook.follow);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_piped_with_follow() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  piped: true
+  follow: true
+  commands:
+    fmt:
+      run: cargo fmt -- --check
+    test:
+      run: cargo test
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.piped);
+            assert!(hook.follow);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_command_priority() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  piped: true
+  commands:
+    install:
+      run: npm install
+      priority: 1
+    lint:
+      run: eslint .
+      priority: 2
+    test:
+      run: npm test
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert_eq!(hook.commands.get("install").unwrap().priority, Some(1));
+            assert_eq!(hook.commands.get("lint").unwrap().priority, Some(2));
+            assert_eq!(hook.commands.get("test").unwrap().priority, None);
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_piped_in_path_based() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  paths:
+    "frontend/":
+      piped: true
+      commands:
+        lint:
+          run: npm run lint
+          priority: 1
+        test:
+          run: npm test
+          priority: 2
+    "backend/":
+      commands:
+        fmt:
+          run: cargo fmt -- --check
+"#,
+        );
+        if let HookConfig::PathBased { paths } = config.hooks.get("pre-commit").unwrap() {
+            let frontend = paths.get("frontend/").unwrap();
+            assert!(frontend.piped);
+
+            let backend = paths.get("backend/").unwrap();
+            assert!(!backend.piped);
+        } else {
+            panic!("Expected PathBased hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_piped_with_priority() {
+        let config = parse_toml(
+            r#"
+[pre-commit]
+piped = true
+follow = true
+
+[pre-commit.commands.install]
+run = "npm install"
+priority = 1
+
+[pre-commit.commands.lint]
+run = "eslint ."
+priority = 2
+
+[pre-commit.commands.test]
+run = "npm test"
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.piped);
+            assert!(hook.follow);
+            assert_eq!(hook.commands.get("install").unwrap().priority, Some(1));
+            assert_eq!(hook.commands.get("lint").unwrap().priority, Some(2));
+            assert_eq!(hook.commands.get("test").unwrap().priority, None);
         } else {
             panic!("Expected Simple hook config");
         }

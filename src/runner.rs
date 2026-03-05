@@ -243,6 +243,7 @@ struct PreparedCommand {
     command_name: String,
     expanded_commands: Vec<String>,
     working_dir: Option<String>,
+    priority: Option<u32>,
 }
 
 fn evaluate_skip_condition(condition: &SkipCondition) -> bool {
@@ -329,6 +330,7 @@ fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
             command_name: command_name.clone(),
             expanded_commands,
             working_dir,
+            priority: command.priority,
         });
     }
 
@@ -393,7 +395,19 @@ fn execute_command_captured(
     )
 }
 
-fn run_commands_sequential(prepared: Vec<PreparedCommand>) -> Vec<CommandResult> {
+fn sort_by_priority(commands: &mut [PreparedCommand]) {
+    commands.sort_by(|left, right| match (left.priority, right.priority) {
+        (Some(left_priority), Some(right_priority)) => left_priority.cmp(&right_priority),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+}
+
+fn run_commands_sequential(
+    prepared: Vec<PreparedCommand>,
+    stop_on_failure: bool,
+) -> Vec<CommandResult> {
     let mut results = Vec::new();
 
     for command in prepared {
@@ -421,7 +435,7 @@ fn run_commands_sequential(prepared: Vec<PreparedCommand>) -> Vec<CommandResult>
             captured_output: None,
         });
 
-        if failed {
+        if failed && stop_on_failure {
             return results;
         }
     }
@@ -569,15 +583,24 @@ pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
             println!("{} {}", FOLDER, working_dir.blue().bold());
         }
 
-        let prepared = prepare_commands(hook);
+        let mut prepared = prepare_commands(hook);
 
-        let results = if hook.parallel {
+        let results = if hook.piped {
+            sort_by_priority(&mut prepared);
+            let stop_on_failure = !hook.follow;
+            run_commands_sequential(prepared, stop_on_failure)
+        } else if hook.parallel {
             run_commands_parallel(prepared)
         } else {
-            run_commands_sequential(prepared)
+            run_commands_sequential(prepared, true)
         };
 
-        if hook.parallel {
+        let show_summary = if hook.piped {
+            hook.follow
+        } else {
+            hook.parallel
+        };
+        if show_summary {
             print_parallel_summary(&results);
         }
 
@@ -751,5 +774,81 @@ mod tests {
         assert!(match_branch_pattern("release/1.0", "release/*"));
         assert!(match_branch_pattern("feature/abc", "feature/*"));
         assert!(!match_branch_pattern("main", "release/*"));
+    }
+
+    fn make_prepared(name: &str, priority: Option<u32>) -> PreparedCommand {
+        PreparedCommand {
+            command_name: name.to_string(),
+            expanded_commands: vec![format!("echo {name}")],
+            working_dir: None,
+            priority,
+        }
+    }
+
+    #[test]
+    fn test_sort_by_priority_ascending() {
+        let mut commands = vec![
+            make_prepared("third", Some(3)),
+            make_prepared("first", Some(1)),
+            make_prepared("second", Some(2)),
+        ];
+        sort_by_priority(&mut commands);
+        assert_eq!(commands[0].command_name, "first");
+        assert_eq!(commands[1].command_name, "second");
+        assert_eq!(commands[2].command_name, "third");
+    }
+
+    #[test]
+    fn test_sort_by_priority_unprioritized_last() {
+        let mut commands = vec![
+            make_prepared("no_priority", None),
+            make_prepared("high", Some(1)),
+            make_prepared("low", Some(10)),
+        ];
+        sort_by_priority(&mut commands);
+        assert_eq!(commands[0].command_name, "high");
+        assert_eq!(commands[1].command_name, "low");
+        assert_eq!(commands[2].command_name, "no_priority");
+    }
+
+    #[test]
+    fn test_sort_by_priority_stable_order() {
+        let mut commands = vec![
+            make_prepared("alpha", Some(1)),
+            make_prepared("beta", Some(1)),
+            make_prepared("gamma", Some(1)),
+        ];
+        sort_by_priority(&mut commands);
+        assert_eq!(commands[0].command_name, "alpha");
+        assert_eq!(commands[1].command_name, "beta");
+        assert_eq!(commands[2].command_name, "gamma");
+    }
+
+    #[test]
+    fn test_sort_by_priority_no_priorities() {
+        let mut commands = vec![
+            make_prepared("zebra", None),
+            make_prepared("alpha", None),
+            make_prepared("middle", None),
+        ];
+        sort_by_priority(&mut commands);
+        assert_eq!(commands[0].command_name, "zebra");
+        assert_eq!(commands[1].command_name, "alpha");
+        assert_eq!(commands[2].command_name, "middle");
+    }
+
+    #[test]
+    fn test_sort_by_priority_mixed() {
+        let mut commands = vec![
+            make_prepared("no_priority_a", None),
+            make_prepared("priority_3", Some(3)),
+            make_prepared("no_priority_b", None),
+            make_prepared("priority_1", Some(1)),
+        ];
+        sort_by_priority(&mut commands);
+        assert_eq!(commands[0].command_name, "priority_1");
+        assert_eq!(commands[1].command_name, "priority_3");
+        assert_eq!(commands[2].command_name, "no_priority_a");
+        assert_eq!(commands[3].command_name, "no_priority_b");
     }
 }
