@@ -2,6 +2,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 use colored::Colorize;
+use indexmap::IndexMap;
 
 use globset::Glob;
 
@@ -244,9 +245,23 @@ struct PreparedCommand {
     expanded_commands: Vec<String>,
     working_dir: Option<String>,
     priority: Option<u32>,
+    env: IndexMap<String, String>,
 }
 
-fn evaluate_skip_condition(condition: &SkipCondition) -> bool {
+fn normalize_rc_path(rc_file: &str) -> String {
+    if rc_file.starts_with('/') || rc_file.starts_with("./") || rc_file.starts_with("../") {
+        rc_file.to_string()
+    } else {
+        format!("./{rc_file}")
+    }
+}
+
+fn wrap_with_rc(command: &str, rc_file: &str) -> String {
+    let normalized = normalize_rc_path(rc_file);
+    format!(". {normalized} && {command}")
+}
+
+fn evaluate_skip_condition(condition: &SkipCondition, rc_file: Option<&str>) -> bool {
     match condition {
         SkipCondition::Merge => is_merge(),
         SkipCondition::Rebase => is_rebase(),
@@ -255,7 +270,11 @@ fn evaluate_skip_condition(condition: &SkipCondition) -> bool {
             None => false,
         },
         SkipCondition::Run(command) => {
-            let mut shell = build_shell_command(command, None);
+            let effective_command = match rc_file {
+                Some(rc) => wrap_with_rc(command, rc),
+                None => command.clone(),
+            };
+            let mut shell = build_shell_command(&effective_command, None, &IndexMap::new());
             shell
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null());
@@ -277,13 +296,15 @@ fn match_branch_pattern(branch: &str, pattern: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn should_skip(conditions: &[SkipCondition]) -> bool {
-    conditions.iter().any(evaluate_skip_condition)
+fn should_skip(conditions: &[SkipCondition], rc_file: Option<&str>) -> bool {
+    conditions
+        .iter()
+        .any(|condition| evaluate_skip_condition(condition, rc_file))
 }
 
-fn skip_reason(conditions: &[SkipCondition]) -> String {
+fn skip_reason(conditions: &[SkipCondition], rc_file: Option<&str>) -> String {
     for condition in conditions {
-        if evaluate_skip_condition(condition) {
+        if evaluate_skip_condition(condition, rc_file) {
             return match condition {
                 SkipCondition::Merge => "merge".to_string(),
                 SkipCondition::Rebase => "rebase".to_string(),
@@ -295,12 +316,12 @@ fn skip_reason(conditions: &[SkipCondition]) -> String {
     "skip".to_string()
 }
 
-fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
+fn prepare_commands(hook: &Hook, rc_file: Option<&str>) -> Vec<PreparedCommand> {
     let mut prepared = Vec::new();
 
     for (command_name, command) in &hook.commands {
-        if should_skip(&command.skip) {
-            let reason = skip_reason(&command.skip);
+        if should_skip(&command.skip, rc_file) {
+            let reason = skip_reason(&command.skip, rc_file);
             println!(
                 "{} {} {}",
                 WRENCH,
@@ -312,7 +333,16 @@ fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
 
         let expanded_commands =
             match expand_file_placeholders(&command.run, &command.glob, &command.exclude) {
-                Some(commands) => commands,
+                Some(commands) => {
+                    if let Some(rc) = rc_file {
+                        commands
+                            .into_iter()
+                            .map(|cmd| wrap_with_rc(&cmd, rc))
+                            .collect()
+                    } else {
+                        commands
+                    }
+                }
                 None => {
                     println!(
                         "{} {} {}",
@@ -331,6 +361,7 @@ fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
             expanded_commands,
             working_dir,
             priority: command.priority,
+            env: command.env.clone(),
         });
     }
 
@@ -340,6 +371,7 @@ fn prepare_commands(hook: &Hook) -> Vec<PreparedCommand> {
 fn build_shell_command(
     command_string: &str,
     working_dir: Option<&String>,
+    env_vars: &IndexMap<String, String>,
 ) -> std::process::Command {
     let mut shell_command = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" });
 
@@ -353,14 +385,17 @@ fn build_shell_command(
         shell_command.current_dir(dir);
     }
 
+    shell_command.envs(env_vars);
+
     shell_command
 }
 
 fn execute_command_inherited(
     command_string: &str,
     working_dir: Option<&String>,
+    env_vars: &IndexMap<String, String>,
 ) -> Result<(), i32> {
-    let mut shell_command = build_shell_command(command_string, working_dir);
+    let mut shell_command = build_shell_command(command_string, working_dir, env_vars);
     let status = shell_command.status().expect("Failed to execute command");
 
     if status.success() {
@@ -373,8 +408,9 @@ fn execute_command_inherited(
 fn execute_command_captured(
     command_string: &str,
     working_dir: Option<&String>,
+    env_vars: &IndexMap<String, String>,
 ) -> (bool, i32, CapturedOutput) {
-    let mut shell_command = build_shell_command(command_string, working_dir);
+    let mut shell_command = build_shell_command(command_string, working_dir, env_vars);
 
     shell_command
         .stdout(std::process::Stdio::piped())
@@ -418,7 +454,9 @@ fn run_commands_sequential(
         let mut exit_code = 0;
 
         for expanded in &command.expanded_commands {
-            if let Err(code) = execute_command_inherited(expanded, command.working_dir.as_ref()) {
+            if let Err(code) =
+                execute_command_inherited(expanded, command.working_dir.as_ref(), &command.env)
+            {
                 failed = true;
                 exit_code = code;
                 break;
@@ -453,8 +491,11 @@ fn run_commands_parallel(prepared: Vec<PreparedCommand>) -> Vec<CommandResult> {
                 let mut combined_stderr = Vec::new();
 
                 for expanded in &command.expanded_commands {
-                    let (success, code, output) =
-                        execute_command_captured(expanded, command.working_dir.as_ref());
+                    let (success, code, output) = execute_command_captured(
+                        expanded,
+                        command.working_dir.as_ref(),
+                        &command.env,
+                    );
 
                     combined_stdout.extend(output.stdout);
                     combined_stderr.extend(output.stderr);
@@ -567,9 +608,11 @@ pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
 
     println!("{} Running {} hook", ROCKET, hook_name.cyan().bold());
 
+    let rc_file = config.rc.as_deref();
+
     for hook in matching_hooks {
-        if should_skip(&hook.skip) {
-            let reason = skip_reason(&hook.skip);
+        if should_skip(&hook.skip, rc_file) {
+            let reason = skip_reason(&hook.skip, rc_file);
             println!(
                 "{} Skipping {} {}",
                 SKIP,
@@ -583,7 +626,7 @@ pub fn run_hook(config: &Config, hook_name: &str, changed_only: bool) {
             println!("{} {}", FOLDER, working_dir.blue().bold());
         }
 
-        let mut prepared = prepare_commands(hook);
+        let mut prepared = prepare_commands(hook, rc_file);
 
         let results = if hook.piped {
             sort_by_priority(&mut prepared);
@@ -733,34 +776,38 @@ mod tests {
 
     #[test]
     fn test_should_skip_empty_conditions() {
-        assert!(!should_skip(&[]));
+        assert!(!should_skip(&[], None));
     }
 
     #[test]
     fn test_should_skip_merge_when_not_merging() {
-        assert!(!should_skip(&[SkipCondition::Merge]));
+        assert!(!should_skip(&[SkipCondition::Merge], None));
     }
 
     #[test]
     fn test_should_skip_rebase_when_not_rebasing() {
-        assert!(!should_skip(&[SkipCondition::Rebase]));
+        assert!(!should_skip(&[SkipCondition::Rebase], None));
     }
 
     #[test]
     fn test_should_skip_ref_no_match() {
-        assert!(!should_skip(&[SkipCondition::Ref(
-            "nonexistent-branch-xyz".to_string()
-        )]));
+        assert!(!should_skip(
+            &[SkipCondition::Ref("nonexistent-branch-xyz".to_string())],
+            None
+        ));
     }
 
     #[test]
     fn test_should_skip_run_false_condition() {
-        assert!(!should_skip(&[SkipCondition::Run("false".to_string())]));
+        assert!(!should_skip(
+            &[SkipCondition::Run("false".to_string())],
+            None
+        ));
     }
 
     #[test]
     fn test_should_skip_run_true_condition() {
-        assert!(should_skip(&[SkipCondition::Run("true".to_string())]));
+        assert!(should_skip(&[SkipCondition::Run("true".to_string())], None));
     }
 
     #[test]
@@ -782,6 +829,7 @@ mod tests {
             expanded_commands: vec![format!("echo {name}")],
             working_dir: None,
             priority,
+            env: IndexMap::new(),
         }
     }
 
@@ -850,5 +898,34 @@ mod tests {
         assert_eq!(commands[1].command_name, "priority_3");
         assert_eq!(commands[2].command_name, "no_priority_a");
         assert_eq!(commands[3].command_name, "no_priority_b");
+    }
+
+    #[test]
+    fn test_wrap_with_rc() {
+        assert_eq!(
+            wrap_with_rc("cargo fmt", ".monkrc"),
+            ". ./.monkrc && cargo fmt"
+        );
+        assert_eq!(
+            wrap_with_rc("npm test", "/home/user/.nvm/nvm.sh"),
+            ". /home/user/.nvm/nvm.sh && npm test"
+        );
+        assert_eq!(
+            wrap_with_rc("npm test", "./scripts/init.sh"),
+            ". ./scripts/init.sh && npm test"
+        );
+        assert_eq!(
+            wrap_with_rc("npm test", "../shared/init.sh"),
+            ". ../shared/init.sh && npm test"
+        );
+    }
+
+    #[test]
+    fn test_normalize_rc_path() {
+        assert_eq!(normalize_rc_path(".monkrc"), "./.monkrc");
+        assert_eq!(normalize_rc_path("scripts/init.sh"), "./scripts/init.sh");
+        assert_eq!(normalize_rc_path("/absolute/path.sh"), "/absolute/path.sh");
+        assert_eq!(normalize_rc_path("./relative.sh"), "./relative.sh");
+        assert_eq!(normalize_rc_path("../parent.sh"), "../parent.sh");
     }
 }

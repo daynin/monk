@@ -349,6 +349,45 @@ Skip accepts a single condition or a list. If any condition matches, the hook or
 
 To disable all hooks globally, set the environment variable `MONK=0`.
 
+#### Environment Variables
+
+Set environment variables for specific commands using the `env` key:
+
+```yaml
+pre-commit:
+  commands:
+    lint:
+      run: eslint {staged_files}
+      env:
+        NODE_ENV: production
+        FORCE_COLOR: "1"
+    test:
+      run: cargo test
+      env:
+        RUST_LOG: debug
+```
+
+Environment variables are added to the command's process environment (they augment the inherited environment, not replace it). Each command can have its own set of environment variables.
+
+#### RC Files
+
+Use the top-level `rc` key to source a shell script before every command:
+
+```yaml
+rc: .monkrc
+
+pre-commit:
+  commands:
+    lint:
+      run: eslint .
+    test:
+      run: npm test
+```
+
+The RC file is sourced via `. <path> && <command>` (POSIX-compatible dot-source). This is useful for shell-managed toolchains like nvm, rbenv, or pyenv that require shell initialization before tools are available.
+
+The `rc` path is relative to the project root. RC also applies to `skip: run:` shell conditions.
+
 #### Local Config Overrides
 
 Create a `monk-local.yaml` file (add it to `.gitignore`) to override or extend your project's `monk.yaml` without affecting teammates:

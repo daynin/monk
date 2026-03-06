@@ -93,6 +93,8 @@ fn parse_skip_condition(value: serde_yaml::Value) -> Result<SkipCondition, Strin
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
+    #[serde(default)]
+    pub rc: Option<String>,
     #[serde(flatten)]
     pub hooks: IndexMap<String, HookConfig>,
 }
@@ -134,6 +136,8 @@ pub struct Command {
     pub skip: Vec<SkipCondition>,
     #[serde(default)]
     pub priority: Option<u32>,
+    #[serde(default)]
+    pub env: IndexMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -180,6 +184,7 @@ where
                         exclude: Vec::new(),
                         skip: Vec::new(),
                         priority: None,
+                        env: IndexMap::new(),
                     };
                     (name, command)
                 })
@@ -1425,5 +1430,180 @@ run = "./check.sh"
         } else {
             panic!("Expected Simple hook config");
         }
+    }
+
+    #[test]
+    fn test_command_env() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint .
+      env:
+        NODE_ENV: production
+        FORCE_COLOR: "1"
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.env.get("NODE_ENV").unwrap(), "production");
+            assert_eq!(lint.env.get("FORCE_COLOR").unwrap(), "1");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_command_env_defaults_to_empty() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            assert!(hook.commands.get("fmt").unwrap().env.is_empty());
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_rc_config() {
+        let config = parse_config(
+            r#"
+rc: .monkrc
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+        );
+        assert_eq!(config.rc, Some(".monkrc".to_string()));
+    }
+
+    #[test]
+    fn test_rc_defaults_to_none() {
+        let config = parse_config(
+            r#"
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+        );
+        assert_eq!(config.rc, None);
+    }
+
+    #[test]
+    fn test_toml_command_env() {
+        let config = parse_toml(
+            r#"
+[pre-commit.commands.lint]
+run = "eslint ."
+
+[pre-commit.commands.lint.env]
+NODE_ENV = "production"
+FORCE_COLOR = "1"
+"#,
+        );
+        if let HookConfig::Simple(hook) = config.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.env.get("NODE_ENV").unwrap(), "production");
+            assert_eq!(lint.env.get("FORCE_COLOR").unwrap(), "1");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_toml_rc() {
+        let config = parse_toml(
+            r#"
+rc = ".monkrc"
+
+[pre-commit.commands.fmt]
+run = "cargo fmt"
+"#,
+        );
+        assert_eq!(config.rc, Some(".monkrc".to_string()));
+    }
+
+    #[test]
+    fn test_merge_env_adds_keys() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint .
+      env:
+        NODE_ENV: production
+"#,
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint .
+      env:
+        NODE_ENV: production
+        FORCE_COLOR: "1"
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.env.get("NODE_ENV").unwrap(), "production");
+            assert_eq!(lint.env.get("FORCE_COLOR").unwrap(), "1");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_env_overrides_key() {
+        let merged = merge(
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint .
+      env:
+        NODE_ENV: development
+"#,
+            r#"
+pre-commit:
+  commands:
+    lint:
+      run: eslint .
+      env:
+        NODE_ENV: production
+"#,
+        );
+        if let HookConfig::Simple(hook) = merged.hooks.get("pre-commit").unwrap() {
+            let lint = hook.commands.get("lint").unwrap();
+            assert_eq!(lint.env.get("NODE_ENV").unwrap(), "production");
+        } else {
+            panic!("Expected Simple hook config");
+        }
+    }
+
+    #[test]
+    fn test_merge_rc_override() {
+        let merged = merge(
+            r#"
+rc: .monkrc
+pre-commit:
+  commands:
+    fmt:
+      run: cargo fmt
+"#,
+            r#"
+rc: .local-monkrc
+"#,
+        );
+        assert_eq!(merged.rc, Some(".local-monkrc".to_string()));
     }
 }
