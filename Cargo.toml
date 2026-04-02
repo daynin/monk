@@ -16,7 +16,7 @@ clap = { version = "4.5.47", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 console = "0.16.2"
-colored = "3.0.0"
+colored = "3.1.1"
 indexmap = { version = "2.13", features = ["serde"] }
 globset = "0.4"
 toml = "0.8"
