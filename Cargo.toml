@@ -19,7 +19,7 @@ console = "0.16.2"
 colored = "3.0.0"
 indexmap = { version = "2.13", features = ["serde"] }
 globset = "0.4"
-toml = "0.8"
+toml = "1.1"
 
 [lib]
 name = "monk"
